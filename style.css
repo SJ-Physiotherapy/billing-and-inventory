@@ -1,0 +1,1089 @@
+/* =========================================================================
+   SJ PHYSIOTHERAPY - BILLING SYSTEM
+   Design tokens
+   ========================================================================= */
+:root {
+  /* Theme customization tokens - JS (applyTheme_ in app.js) sets these
+     directly from Admin Settings -> Theme, INCLUDING the fully-resolved
+     gradient strings (not left for CSS to compose from sub-variables) -
+     some browsers don't reliably re-resolve a var() that itself contains
+     another var() when used inside border-image, so the composed value is
+     computed once in JS and written straight in, everywhere it's needed. */
+  --theme-button-from: #a8d339;
+  --theme-button-to: #2778b7;
+  --theme-button-text: #FFFFFF;
+  --theme-sidebar-from: #a8d339;
+  --theme-sidebar-to: #2778b7;
+  --theme-sidebar-text: #FFFFFF;
+  --theme-nav-active-bg: #FFFFFF;
+  --theme-nav-active-text: #a8d339;
+  --theme-bill-header: #a8d339;
+  --theme-heading: #182322;
+  --theme-muted: #4B5A57;
+  --theme-bg: #F6F4F3;
+  --theme-surface: #FFFFFF;
+  --theme-border: #E7DCD8;
+
+  /* Login screen - independent from the sidebar above so a shop can give
+     its login page a different look from its app shell. */
+  --theme-login-gradient: linear-gradient(135deg, #a8d339 0%, #2778b7 100%);
+  --theme-login-card-bg: #FFFFFF;
+  --theme-login-heading: #182322;
+  --theme-login-text: #4B5A57;
+
+  /* Page headings (big page title + its explainer line) and section
+     headings (smaller in-page titles, e.g. "Products", gate-box titles). */
+  --theme-page-heading: #182322;
+  --theme-page-subheading: #4B5A57;
+  --theme-section-heading: #182322;
+
+  /* Tabs - Admin Settings tabs + Reports tabs share this styling. */
+  --theme-tab-active-text: #a8d339;
+  --theme-tab-inactive-text: #4B5A57;
+  --theme-tab-indicator: linear-gradient(135deg, #a8d339 0%, #2778b7 100%);
+
+  /* Find/Edit "gate" box (Super Admin credential + editable-bill box). */
+  --theme-gate-bg: #FBF1DC;
+  --theme-gate-border: #E8C766;
+  --theme-gate-title: #C68A1E;
+
+  /* KPI / number-card colors - Dashboard's 4 cards and Inventory's 3 cards
+     reuse these 4 slots, driven from the first 4 Chart Colors. */
+  --kpi-color-c-teal: #D7263D;
+  --kpi-color-soft-c-teal: #FBE1E4;
+  --kpi-color-c-gold: #C9781C;
+  --kpi-color-soft-c-gold: #FCE8CC;
+  --kpi-color-c-green: #E85D04;
+  --kpi-color-soft-c-green: #FDE7D3;
+  --kpi-color-c-violet: #6C4FB6;
+  --kpi-color-soft-c-violet: #EAE2FA;
+
+  --ink: var(--theme-heading);
+  --ink-soft: var(--theme-muted);
+  --muted: var(--theme-muted);
+  --line: var(--theme-border);
+  --bg: var(--theme-bg);
+  --surface: var(--theme-surface);
+  /* --paper is deliberately NOT themed - the printable bill itself always
+     stays near-white regardless of the app's on-screen theme, the same way
+     the print stylesheet already forces a plain white page. A bill is a
+     document meant to be printed/emailed/read on any device; locking its
+     background to white keeps it legible and professional no matter how
+     wild the on-screen dashboard theme gets. */
+  --paper: #FFFFFE;
+
+  /* Core brand theme - default values here exactly match the original
+     hardcoded design, so a spreadsheet that has never customized its theme
+     looks identical to before this feature existed. applyTheme_() 
+     overwrites --primary/--brand-gradient/--sidebar-gradient directly with
+     fully-resolved values once settings load. */
+  --primary: #a8d339;
+  --primary-dark: #2778b7;
+  --primary-soft: #FCE2DC;
+  --accent: #59ff4d;
+  --accent-dark: #2be42e;
+  --accent-soft: #fffbda;
+  --brand-gradient: linear-gradient(135deg, #a8d339 0%, #2778b7 100%);
+  --brand-gradient-hover: linear-gradient(135deg, #a8d339 0%, #2778b7 100%);
+  --brand-gradient-soft: linear-gradient(135deg, #FFEDEA 0%, #FFF1E4 100%);
+  --sidebar-gradient: linear-gradient(180deg, #a8d339 0%, #2778b7 100%);
+
+  /* "Success"/positive states use a warm gold instead of green, per theme */
+  --success: #C9781C;
+  --success-soft: #FBEEDA;
+  --danger: #C64B3E;
+  --danger-soft: #FBE9E6;
+  --warn: #C68A1E;
+  --warn-soft: #FBF1DC;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 2px rgba(15, 30, 27, 0.06), 0 1px 1px rgba(15, 30, 27, 0.04);
+  --shadow-md: 0 6px 20px rgba(15, 30, 27, 0.10);
+  --shadow-lg: 0 16px 40px rgba(15, 30, 27, 0.16);
+
+  --font-display: "Cambria", "Georgia", "Times New Roman", Times, serif;
+  --font-body: "Cambria", "Georgia", "Times New Roman", Times, serif;
+  --font-mono: "Consolas", "SFMono-Regular", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; overflow-x: hidden; }
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+img { max-width: 100%; display: block; }
+button { font-family: inherit; }
+a { color: var(--primary); }
+
+.hidden { display: none !important; }
+
+::selection { background: var(--accent-soft); color: var(--ink); }
+
+/* Focus visibility */
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* =========================================================================
+   LOGIN SCREEN
+   ========================================================================= */
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Independent from the sidebar - see --theme-login-gradient (Theme tab ->
+     Login Screen), instead of reusing the sidebar's colors. */
+  background: var(--theme-login-gradient);
+  padding: 24px;
+}
+.login-card {
+  background: var(--theme-login-card-bg);
+  width: 100%;
+  max-width: 400px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 40px 32px 32px;
+  text-align: center;
+}
+.login-logo {
+  width: 72px; height: 72px; border-radius: 50%;
+  object-fit: cover; margin: 0 auto 14px;
+  border: 3px solid var(--accent-soft);
+}
+.login-card h1 {
+  font-size: 20px; margin: 0 0 4px;
+  letter-spacing: 0.2px;
+  color: var(--theme-login-heading);
+}
+.login-card p.sub { color: var(--theme-login-text); font-size: 13px; margin: 0 0 24px; }
+.field { text-align: left; margin-bottom: 16px; }
+.field label {
+  display: block; font-size: 12px; font-weight: 600; letter-spacing: 0.3px;
+  color: var(--ink-soft); margin-bottom: 6px; text-transform: uppercase;
+}
+.field input, .field select, .field textarea {
+  width: 100%; padding: 11px 13px; border: 1.5px solid var(--line);
+  border-radius: var(--radius-sm); font-size: 14.5px; background: var(--surface);
+  color: var(--ink); transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); outline: none;
+}
+.field-hint { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.field-error { font-size: 11.5px; color: var(--danger); margin-top: 4px; display: none; }
+.field.has-error input { border-color: var(--danger); }
+.field.has-error .field-error { display: block; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: none; border-radius: var(--radius-sm); padding: 11px 18px;
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: transform .08s ease, opacity .15s ease, background .15s ease;
+  white-space: nowrap;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--brand-gradient); color: var(--theme-button-text); box-shadow: 0 4px 12px -4px rgba(0,0,0,.35); }
+.btn-primary:hover { background: var(--brand-gradient-hover); }
+.btn-accent { background: var(--brand-gradient); color: var(--theme-button-text); box-shadow: 0 4px 12px -4px rgba(0,0,0,.35); }
+.btn-accent:hover { background: var(--brand-gradient-hover); }
+.btn-outline { background: transparent; color: var(--primary); border: 1.5px solid var(--primary); }
+.btn-outline:hover { background: var(--primary-soft); }
+.btn-danger { background: var(--danger-soft); color: var(--danger); }
+.btn-danger:hover { background: var(--danger); color: #fff; }
+.btn-block { width: 100%; }
+.btn-sm { padding: 7px 12px; font-size: 12.5px; }
+.btn[disabled] { opacity: .55; cursor: not-allowed; }
+
+.login-error {
+  background: var(--danger-soft); color: var(--danger); font-size: 13px;
+  padding: 10px 12px; border-radius: var(--radius-sm); margin-bottom: 16px; display: none;
+}
+
+/* =========================================================================
+   APP SHELL
+   ========================================================================= */
+.stale-backend-bar {
+  display: none; position: sticky; top: 0; left: 0; right: 0; z-index: 500;
+  background: #FFF3CD; color: #7A5B00; border-bottom: 2px solid #E6B800;
+  font-size: 12.5px; font-weight: 600; line-height: 1.5;
+  padding: 10px 16px; text-align: center;
+}
+.stale-backend-bar.show { display: block; }
+.stale-backend-bar code {
+  background: rgba(0,0,0,.08); padding: 1px 5px; border-radius: 4px; font-size: 11.5px;
+}
+
+.app-shell { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: 68px; flex-shrink: 0; background: var(--sidebar-gradient); color: var(--theme-sidebar-text);
+  display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh;
+  z-index: 40; overflow: hidden; white-space: nowrap;
+  transition: width .2s ease;
+}
+.sidebar:hover {
+  width: 232px;
+}
+
+.nav-label {
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.sidebar:hover .nav-label {
+  opacity: 1;
+}
+
+.sidebar-brand .brand-text {
+  opacity: 0;
+  transition: opacity .15s ease;
+  white-space: nowrap;
+}
+.sidebar:hover .sidebar-brand .brand-text {
+  opacity: 1;
+}
+
+.sidebar-footer {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease;
+}
+.sidebar:hover .sidebar-footer {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-brand {
+  display: flex; align-items: center; gap: 10px; padding: 18px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.sidebar-brand img { width: 38px; height: 38px; border-radius: 8px; object-fit: cover; }
+.sidebar-brand .name { font-size: 13.5px; font-weight: 700; line-height: 1.25; white-space: nowrap; }
+.sidebar-brand .tag { font-size: 10.5px; opacity: .65; letter-spacing: .4px; }
+
+.nav { flex: 1; padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; }
+.nav-item {
+  display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: var(--radius-sm);
+  color: var(--theme-sidebar-text); opacity: .78; font-size: 13.5px; font-weight: 500; cursor: pointer; border: none;
+  background: transparent; text-align: left; width: 100%;
+  white-space: nowrap; transition: opacity .12s ease, background .12s ease;
+}
+.nav-item .ic { width: 24px; text-align: center; font-size: 20px; flex-shrink: 0; }
+.nav-item:hover { background: rgba(127,127,127,0.14); opacity: 1; }
+.nav-item.active { background: var(--theme-nav-active-bg); color: var(--theme-nav-active-text); opacity: 1; font-weight: 700; }
+
+.sidebar-footer { padding: 14px; border-top: 1px solid rgba(255,255,255,0.12); }
+.sidebar-footer .who { font-size: 12px; opacity: .8; margin-bottom: 8px; white-space: nowrap; }
+
+/* Creator credit - sits below the Log Out button, faded to ~50% so it never
+   competes with real app UI. Hand-drawn SVG icons (no images), same
+   show-on-hover behavior as the rest of the sidebar footer. */
+.creator-credit {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  opacity: .5;
+  white-space: nowrap;
+}
+.creator-credit-name {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .2px;
+  margin-bottom: 9px;
+}
+.creator-credit-icons { display: flex; align-items: center; gap: 13px; }
+.creator-credit-icons a {
+  color: var(--theme-sidebar-text);
+  display: flex;
+  transition: opacity .15s ease;
+}
+.creator-credit-icons a:hover { opacity: .8; }
+.creator-credit-icons svg { width: 15px; height: 15px; display: block; }
+
+.main-area { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.topbar {
+  display: none;
+  align-items: center; justify-content: space-between;
+  padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 30;
+}
+.topbar .hamburger {
+  background: none; border: none; font-size: 27px; line-height: 1; cursor: pointer; color: var(--primary);
+  padding: 6px 10px; border-radius: var(--radius-sm);
+}
+.topbar .hamburger:active { background: var(--primary-soft); }
+.topbar .brand-mini { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+.topbar .brand-mini img { width: 26px; height: 26px; border-radius: 6px; }
+
+.view { display: none; padding: 22px; }
+.view.active { display: block; }
+
+.view-header {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  margin-bottom: 18px;
+}
+.view-header h2 { margin: 0; font-size: 20px; color: var(--theme-page-heading); }
+.view-header p { margin: 2px 0 0; color: var(--theme-page-subheading); font-size: 13px; }
+
+/* =========================================================================
+   BILLING VIEW - split layout
+   ========================================================================= */
+.billing-grid {
+  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 20px; align-items: start;
+}
+.panel {
+  background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+  border: 1px solid var(--line); padding: 20px;
+}
+.panel h3 {
+  font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--theme-section-heading);
+  margin: 0 0 14px; display: flex; align-items: center; gap: 8px;
+}
+.panel h4 { color: var(--theme-section-heading); }
+.panel + .panel { margin-top: 16px; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+.form-grid .span-2 { grid-column: 1 / -1; }
+
+.product-row {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  align-items: flex-end; padding: 12px 0; border-bottom: 1px dashed var(--line);
+}
+/* Every field in a row is a flex item that can grow, shrink, and - most
+   importantly - WRAP onto its own line rather than overflow, when there
+   isn't room for all of them side by side (small screens, or the extra
+   Discount % field appearing). No fixed column count to fight with. */
+.product-row > div { flex: 1 1 100px; min-width: 90px; }
+.product-row .autocomplete-wrap { flex: 3 1 200px; min-width: 160px; }
+.product-row .row-discount-wrap,
+.product-row .erow-discount-wrap { flex: 1 1 90px; min-width: 80px; }
+.product-row .remove-row { flex: 0 0 auto; align-self: flex-end; }
+.product-row input { width: 100%; box-sizing: border-box; }
+.product-row:last-child { border-bottom: none; }
+.product-row .mini-label { font-size: 10.5px; color: var(--muted); margin-bottom: 4px; display: block; }
+.autocomplete-wrap { position: relative; }
+.row-product-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; margin-top: 2px;
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md); max-height: 220px; overflow-y: auto; z-index: 50;
+  display: none;
+}
+.row-product-dropdown.show { display: block; }
+.dropdown-item { padding: 8px 12px; cursor: pointer; font-size: 13.5px; color: var(--ink); }
+.dropdown-item:hover, .dropdown-item.active { background: var(--primary-soft); }
+.dropdown-item.add-new { color: var(--primary-dark); font-weight: 700; border-top: 1px solid var(--line); }
+.dropdown-item.no-match { color: var(--muted); cursor: default; }
+
+
+
+
+/* Live "Available: X in stock" hint shown next to the product name field
+   while creating a bill - sits on the same line as the "Product" label so
+   it never adds height to the row or disturbs the existing grid alignment. */
+.row-label-line { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.row-stock-badge {
+  font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+  white-space: nowrap; display: none;
+}
+.row-stock-badge.show { display: inline-block; }
+.row-stock-badge.ok   { background: var(--success-soft); color: var(--success); }
+.row-stock-badge.low  { background: var(--warn-soft); color: var(--warn); }
+.row-stock-badge.out  { background: var(--danger-soft); color: var(--danger); }
+.row-stock-badge.na   { background: var(--line); color: var(--muted); }
+
+.line-total { font-weight: 700; font-size: 14px; padding: 11px 0; color: var(--primary-dark); }
+.remove-row {
+  background: var(--danger-soft); color: var(--danger); border: none; border-radius: var(--radius-sm);
+  width: 34px; height: 34px; cursor: pointer; font-size: 15px;
+}
+.add-product-bar { display: flex; gap: 8px; margin-top: 12px; }
+
+.totals-strip {
+  display: flex; justify-content: flex-end; gap: 28px; padding: 14px 4px 4px; margin-top: 6px;
+  border-top: 2px solid var(--primary-soft);
+}
+.totals-strip .t-item { text-align: right; }
+.totals-strip .t-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.totals-strip .t-value { font-size: 19px; font-weight: 800; color: var(--primary-dark); }
+
+.biller-box {
+  display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end;
+  background: var(--primary-soft); padding: 14px; border-radius: var(--radius-md);
+}
+.biller-status { font-size: 12.5px; margin-top: 8px; font-weight: 600; }
+.biller-status.ok { color: var(--success); }
+.biller-status.err { color: var(--danger); }
+
+.payment-note {
+  margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md); font-size: 13px; display: none;
+}
+.payment-note.cash { background: var(--accent-soft); color: var(--accent-dark); display: block; }
+.payment-note.upi { background: var(--primary-soft); color: var(--primary-dark); display: block; }
+
+.qr-box { text-align: center; margin-top: 14px; padding: 16px; background: var(--surface);
+  border: 1.5px dashed var(--primary); border-radius: var(--radius-md); display: none; }
+.qr-box.show { display: block; }
+.qr-box img { width: 176px; height: 176px; margin: 0 auto 8px; border-radius: 8px; }
+.qr-status { font-size: 13px; font-weight: 700; }
+.qr-status.pending { color: var(--warn); }
+.qr-status.paid { color: var(--success); }
+
+/* =========================================================================
+   BILL PREVIEW (live receipt)
+   ========================================================================= */
+.preview-wrap { position: sticky; top: 16px; }
+.preview-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.preview-actions .badges { display: flex; gap: 6px; }
+.badge {
+  font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; text-transform: uppercase;
+  letter-spacing: .3px;
+}
+.badge.paid { background: var(--brand-gradient); color: var(--theme-button-text); }
+.badge.pending { background: var(--warn-soft); color: var(--warn); }
+.badge.cash { background: var(--accent-soft); color: var(--accent-dark); }
+
+.bill-paper {
+  background: var(--paper); border-radius: var(--radius-md); box-shadow: var(--shadow-md);
+  padding: 26px 26px 20px; max-height: 78vh; overflow-y: auto;
+  border: 1px solid var(--line);
+}
+/* Frozen post-save snapshot used only for Print/Save-as-PDF (see the PRINT
+   media query) - present in the DOM for printing purposes, but pushed
+   off-screen during normal viewing rather than display:none, since a
+   display:none ancestor can't be forced visible again by print CSS. */
+#printSnapshot { position: absolute; left: -9999px; top: 0; width: 800px; }
+.bill-head {
+  display: flex; gap: 10px; align-items: flex-start; flex-wrap: nowrap;
+  border-bottom: 1.5px solid var(--ink); padding-bottom: 8px;
+}
+/* "Logo above company info" layout (Theme tab -> Bill Header -> Header
+   Layout). The logo + invoice number sit side by side up top, and the
+   company name/info block runs full-width underneath. */
+.bill-head.bill-head-stacked { display: block; }
+.bill-head-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.bill-head-stacked .bill-head-info { margin-top: 6px; }
+.bill-head .bill-logo {
+  width: 96px;
+  height: 58px;
+  max-width: 96px;
+  max-height: 58px;
+  border-radius: 4px;
+  object-fit: contain;
+  flex-shrink: 0;
+  background: #fff;
+}
+.bill-head-info { flex: 1; min-width: 0; }
+.bill-head .co-name { font-size: 18px; font-weight: 400; margin: 0 0 4px; color: var(--theme-bill-header); }
+.bill-head .co-meta {
+  font-size: 10px; color: var(--theme-bill-header); opacity: .9;
+  line-height: 1.55; margin: 0;
+}
+.bill-head .bill-tag { margin-left: auto; text-align: right; flex-shrink: 0; }
+.bill-head .bill-tag-label {
+  font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px;
+}
+.bill-head .bill-tag .big { font-size: 20px; font-weight: 800; letter-spacing: 1px; color: var(--theme-bill-header); }
+
+/* Bill typography switches (Theme tab -> Bill Header -> Company Name /
+   Company Info Bold/Italic/Underline) - applied as classes rather than
+   inline styles so the same markup renders identically on screen, in
+   print, and in "Save as PDF" (all reuse buildCompanyHeadHtml). */
+.bill-font-bold { font-weight: 800 !important; }
+.bill-head .co-meta.bill-font-bold { font-weight: 700 !important; }
+.bill-font-italic { font-style: italic !important; }
+.bill-font-underline { text-decoration: underline !important; }
+
+.bill-meta-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px;
+  font-size: 12px; margin: 14px 0; color: var(--ink-soft);
+}
+.bill-meta-col { display: flex; flex-direction: column; gap: 3px; }
+.bill-meta-grid b { color: var(--ink); }
+
+.bill-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+.bill-table th {
+  text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px;
+  border-bottom: 1.5px solid var(--ink); padding: 6px 4px; color: var(--ink-soft);
+}
+.bill-table td { padding: 7px 4px; border-bottom: 1px solid var(--line); }
+.bill-table td.num, .bill-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.bill-table td.disc { color: #B23A2E; font-size: 11.5px; }
+
+.bill-totals { margin-top: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.bill-totals .row { display: flex; gap: 24px; font-size: 13px; width: 240px; justify-content: space-between; }
+.bill-totals .row.disc { color: #2eb23d; font-size: 12px; }
+.bill-totals .grand { font-size: 16px; font-weight: 800; border-top: 2px solid var(--ink); padding-top: 6px; margin-top: 4px; }
+
+.bill-foot {
+  margin-top: 18px; font-size: 11px; color: var(--muted);
+  border-top: 1px dashed var(--line); padding-top: 12px;
+  display: flex; justify-content: space-between; align-items: flex-end; gap: 16px;
+}
+.bill-foot-main { flex: 1; min-width: 0; }
+.bill-foot .version-note { color: var(--warn); font-weight: 700; margin-top: 6px; display: block; }
+.bill-bank {
+  margin-top: 8px; font-size: 10.5px; line-height: 1.55; color: var(--ink-soft);
+}
+.bill-sign { text-align: center; flex-shrink: 0; min-width: 120px; }
+.bill-sign .sign-box {
+  width: 110px; height: 42px; border: 1px solid var(--line); border-radius: 4px;
+  margin: 0 auto 4px; background: #fafafa;
+}
+.bill-sign .sign-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+.bill-empty-hint { text-align: center; color: var(--muted); padding: 60px 10px; font-size: 13px; }
+
+/* =========================================================================
+   DASHBOARD
+   ========================================================================= */
+/* Dashboard used to hardcode white regardless of the Theme tab's "Page
+   Background" choice - now it inherits the same themed background every
+   other page already uses. */
+#view-dashboard { background: var(--bg); }
+
+/* -------------------------------------------------------------------------
+   DASHBOARD GRID - 4 KPI cards + 2 chart cards, each with its own
+   independent filter panel (Filter By / Filter Value / Date Range).
+   ------------------------------------------------------------------------- */
+.dash-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 10px; }
+.dash-card.wide { grid-column: 1 / -1; }
+
+.dash-card { display: flex; align-items: stretch; gap: 16px; }
+.dash-card-main { flex: 1; min-width: 0; }
+.dash-card.loading { opacity: .55; pointer-events: none; }
+
+/* -------------------------------------------------------------------------
+   KPI CARDS - bold, colorful "story" tiles with a big badge icon
+   ------------------------------------------------------------------------- */
+.kpi-card {
+  background: linear-gradient(155deg, var(--kpi-color-soft, var(--primary-soft)) 0%, #FFFFFF 62%);
+  border: 1px solid var(--kpi-color-soft, var(--line));
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  position: relative; overflow: hidden;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.kpi-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+.kpi-card::before {
+  content: ''; position: absolute; right: -26px; top: -26px; width: 90px; height: 90px;
+  border-radius: 50%; background: var(--kpi-color, var(--primary)); opacity: .10;
+}
+.kpi-card .icon {
+  width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center;
+  font-size: 24px; background: var(--kpi-color, var(--primary)); color: #fff;
+  box-shadow: 0 6px 14px -4px var(--kpi-color, var(--primary)); margin-bottom: 12px;
+}
+.kpi-card .label { font-size: 11.5px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .4px; }
+.kpi-card .value { font-size: 30px; font-weight: 800; color: var(--kpi-color, var(--primary-dark)); margin-top: 4px; line-height: 1.15; }
+.kpi-card .value.accent { color: var(--kpi-color, var(--accent-dark)); }
+
+.kpi-card.c-teal   { --kpi-color: var(--kpi-color-c-teal, #D7263D); --kpi-color-soft: var(--kpi-color-soft-c-teal, #FBE1E4); }
+.kpi-card.c-gold   { --kpi-color: var(--kpi-color-c-gold, #C9781C); --kpi-color-soft: var(--kpi-color-soft-c-gold, #FCE8CC); }
+.kpi-card.c-green  { --kpi-color: var(--kpi-color-c-green, #E85D04); --kpi-color-soft: var(--kpi-color-soft-c-green, #FDE7D3); }
+.kpi-card.c-violet { --kpi-color: var(--kpi-color-c-violet, #6C4FB6); --kpi-color-soft: var(--kpi-color-soft-c-violet, #EAE2FA); }
+
+.chart-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 20px; box-shadow: var(--shadow-sm);
+}
+.chart-card .dash-card-main h4 { margin: 0 0 14px; font-size: 13px; color: var(--ink); font-weight: 800; text-transform: uppercase; letter-spacing: .4px; }
+.chart-card .dash-card-main h4::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--brand-gradient); margin-right: 7px; }
+#productBarChart { overflow-x: auto; padding-bottom: 6px; }
+.chart-na {
+  color: var(--muted); font-size: 13px; font-style: italic; padding: 30px 10px; text-align: center;
+  background: #FAFBFB; border-radius: 10px;
+}
+
+/* -------------------------------------------------------------------------
+   PER-CARD CHART FILTER PANEL
+   ------------------------------------------------------------------------- */
+.chart-filter {
+  width: 210px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px;
+  border-left: 1.5px dashed var(--line); padding-left: 14px;
+}
+.cf-row { display: flex; align-items: center; gap: 8px; }
+.cf-pill {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
+  background: var(--brand-gradient); color: var(--theme-button-text); font-size: 10.5px; font-weight: 700;
+  padding: 5px 10px; border-radius: 999px; white-space: nowrap; letter-spacing: .2px;
+}
+.cf-select, .cf-input, .cf-date {
+  width: 100%; min-width: 0; padding: 7px 9px; border: 1.3px solid var(--line);
+  border-radius: 999px; font-size: 12px; background: #fff; color: var(--ink);
+  font-family: var(--font-body);
+}
+.cf-select:focus, .cf-input:focus, .cf-date:focus {
+  border-color: var(--primary); outline: none; box-shadow: 0 0 0 2px var(--primary-soft);
+}
+.cf-input:disabled { background: #F4F1F0; color: var(--muted); cursor: not-allowed; }
+.cf-input-wrap { position: relative; flex: 1; min-width: 0; }
+.cf-daterow { margin-top: 2px; }
+.cf-date-inputs { display: flex; gap: 6px; }
+.cf-date-inputs .cf-date { font-size: 11px; padding: 6px 6px; }
+.cf-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; margin-top: 3px;
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md); max-height: 220px; overflow-y: auto; z-index: 60;
+  display: none;
+}
+.cf-dropdown.show { display: block; }
+.cf-clear {
+  display: none; align-self: flex-start; margin-top: 2px;
+  background: var(--danger-soft); color: var(--danger); border: none;
+  font-size: 11px; font-weight: 700; padding: 6px 11px; border-radius: 999px; cursor: pointer;
+}
+.cf-clear:hover { background: var(--danger); color: #fff; }
+.cf-clear.show { display: inline-flex; }
+
+/* =========================================================================
+   ADMIN SETTINGS
+   ========================================================================= */
+.admin-tabs {
+  display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--line);
+  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+}
+.admin-tab {
+  flex-shrink: 0; white-space: nowrap;
+  padding: 9px 14px; font-size: 13px; font-weight: 600; color: var(--theme-tab-inactive-text); background: none; border: none;
+  cursor: pointer; border-bottom: 2px solid transparent;
+}
+.admin-tab.active { color: var(--theme-tab-active-text); border-color: transparent; border-bottom: 2.5px solid; border-image: var(--theme-tab-indicator) 1; }
+.admin-pane { display: none; }
+.admin-pane.active { display: block; }
+
+.biller-table, .lookup-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.biller-table th, .biller-table td, .lookup-table th, .lookup-table td {
+  padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.biller-table th, .lookup-table th { font-size: 11px; text-transform: uppercase; color: var(--muted); }
+
+.toggle {
+  width: 38px; height: 21px; border-radius: 999px; background: var(--line); position: relative;
+  border: none; cursor: pointer; transition: background .15s;
+}
+.toggle.on { background: var(--brand-gradient); }
+.toggle::after {
+  content: ''; position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #fff;
+  top: 2.5px; left: 3px; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.3);
+}
+.toggle.on::after { left: 19px; }
+.toggle-row { display: flex; align-items: center; gap: 8px; height: 38px; }
+.toggle-row-label { font-size: 12.5px; color: var(--ink-soft); font-weight: 600; }
+/* The Find/Edit screen's Tax/Bank/Discount fields sit together in a row
+   that wraps on narrow screens - NOT the same thing as .toggle-row above
+   (that one is just a single switch + its label, fixed at 38px tall; this
+   one holds several full .field blocks side by side, each with their own
+   natural height, so it must NOT be height-constrained). */
+.bill-toggles-wrap { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+.bill-toggles-wrap .field { margin-bottom: 0; }
+
+.stale-backend-bar {
+  display: none; background: #FFF4E5; border-bottom: 2px solid var(--warn);
+  color: #6B4A08; font-size: 12.5px; line-height: 1.5; padding: 10px 20px;
+}
+.stale-backend-bar.show { display: block; }
+.stale-backend-bar b { color: #4A3105; }
+
+.row-actions { display: flex; gap: 6px; }
+.icon-btn {
+  width: 30px; height: 30px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px; border: 1.3px solid var(--line); background: #fff; color: var(--ink-soft);
+  font-size: 14px; cursor: pointer; transition: background .15s, border-color .15s, color .15s;
+}
+.icon-btn-edit:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+.icon-btn-danger { color: var(--danger); border-color: var(--danger-soft); }
+.icon-btn-danger:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+.icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+.icon-btn:disabled:hover { background: #fff; color: var(--ink-soft); border-color: var(--line); }
+
+/* =========================================================================
+   THEME TAB - each option shows a live preview right next to it
+   ========================================================================= */
+.theme-section { margin-bottom: 24px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+.theme-section-title { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .4px; color: var(--theme-section-heading); }
+.theme-row { display: flex; gap: 20px; flex-wrap: wrap; align-items: stretch; margin-bottom: 12px; }
+.theme-row-controls { flex: 1 1 320px; display: flex; flex-wrap: wrap; gap: 14px; align-content: flex-start; }
+.theme-row-controls .field { margin-bottom: 0; min-width: 128px; }
+.theme-preview-box {
+  flex: 0 1 240px; min-width: 200px; background: #FAFAF8; border: 1.5px dashed var(--line);
+  border-radius: var(--radius-sm); padding: 14px;
+}
+.theme-preview-label { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-bottom: 10px; font-weight: 700; }
+.theme-warning {
+  font-size: 12px; color: var(--warn); background: var(--warn-soft); border-radius: 6px;
+  padding: 8px 10px; margin-top: 10px; display: none; line-height: 1.5;
+}
+.theme-warning.show { display: block; }
+.theme-checkbox-row { display: flex; flex-wrap: wrap; gap: 4px 16px; padding-top: 6px; }
+.theme-checkbox {
+  display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;
+  color: var(--ink-soft); cursor: pointer; text-transform: none; letter-spacing: normal;
+}
+.theme-checkbox input { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; }
+
+/* =========================================================================
+   DATA STATUS CARD (Admin Settings -> Shop Details -> Data Status & Reset
+   Tools) - a clean, modern status readout instead of one long text block.
+   ========================================================================= */
+.ds-tool-card { background: var(--surface); border-radius: var(--radius-sm); padding: 14px; margin: 14px 0; }
+.ds-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md);
+  padding: 16px 18px;
+}
+.ds-card-error { border-color: var(--danger); }
+.ds-card-success { border-color: var(--success); }
+.ds-status-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.ds-status-badge {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .4px; color: var(--success); background: var(--success-soft);
+  padding: 4px 10px 4px 8px; border-radius: 99px;
+}
+.ds-status-badge-success { color: var(--success); background: var(--success-soft); }
+.ds-status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; display: inline-block; }
+.ds-status-name { font-size: 14px; font-weight: 700; color: var(--theme-section-heading); }
+.ds-status-open { margin-left: auto; font-size: 12.5px; font-weight: 700; color: var(--primary); text-decoration: none; }
+.ds-status-open:hover { text-decoration: underline; }
+.ds-title { font-size: 14px; font-weight: 700; color: var(--danger); margin-bottom: 4px; }
+.ds-sub { font-size: 12.5px; color: var(--ink-soft); }
+.ds-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.ds-stat {
+  background: var(--bg); border-radius: var(--radius-sm); padding: 12px 10px; text-align: center;
+}
+.ds-stat-value { font-size: 22px; font-weight: 800; color: var(--primary); line-height: 1.1; }
+.ds-stat-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-top: 4px; font-weight: 700; }
+.ds-section-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+.ds-archive-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.ds-archive-row {
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px; background: var(--bg);
+  border-radius: var(--radius-sm); padding: 8px 10px; flex-wrap: wrap;
+}
+.ds-archive-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+.ds-archive-dot.unreachable { background: var(--danger); }
+.ds-archive-name { font-weight: 700; color: var(--ink); }
+.ds-archive-label { color: var(--muted); }
+.ds-archive-link { margin-left: auto; color: var(--primary); font-weight: 700; text-decoration: none; font-size: 12px; }
+.ds-archive-link:hover { text-decoration: underline; }
+.ds-archive-warn { color: var(--danger); font-weight: 700; font-size: 11px; text-transform: uppercase; }
+.ds-archive-empty { font-size: 12.5px; color: var(--muted); margin-bottom: 16px; }
+.ds-next-ids { display: flex; flex-wrap: wrap; gap: 10px; }
+.ds-next-id {
+  display: flex; align-items: center; gap: 6px; background: var(--primary-soft); border-radius: 99px;
+  padding: 6px 12px; font-size: 12px;
+}
+.ds-next-id-label { color: var(--ink-soft); font-weight: 600; }
+.ds-next-id-value { color: var(--primary-dark); font-weight: 800; }
+.ds-note { font-size: 12px; color: var(--muted); line-height: 1.6; margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 12px; }
+
+/* =========================================================================
+   THEME TAB - color picker inputs
+   ========================================================================= */
+input[type="color"] {
+  width: 52px; height: 40px; padding: 3px; border: 1.3px solid var(--line); border-radius: 8px;
+  cursor: pointer; background: var(--surface);
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 5px; }
+input[type="color"]::-moz-color-swatch { border: none; border-radius: 5px; }
+.icon-btn { padding: 6px 10px; font-size: 14px; line-height: 1; }
+.biller-table tr.editing td { background: var(--primary-soft); }
+
+/* =========================================================================
+   RUNBOOK / GUIDE STEPS (Data Continuity panel and similar)
+   ========================================================================= */
+code {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px; background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px;
+}
+details > summary { list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: '\25B8  '; display: inline; }
+details[open] > summary::before { content: '\25BE  '; }
+details > summary:hover { color: var(--primary); }
+
+/* =========================================================================
+   REPORTS
+   ========================================================================= */
+.report-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; position: relative; }
+.report-toolbar-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.report-row-count { font-size: 12.5px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+
+.report-columns-wrap { position: relative; }
+.report-columns-popover {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px rgba(0,0,0,.14);
+  padding: 14px; width: 250px;
+}
+.report-columns-list { display: flex; flex-direction: column; gap: 9px; max-height: 260px; overflow-y: auto; margin-bottom: 12px; padding-right: 4px; }
+.report-columns-list label { display: flex; align-items: center; gap: 9px; font-size: 13px; cursor: pointer; color: var(--ink); }
+.report-columns-list input[type="checkbox"] { width: 15px; height: 15px; flex-shrink: 0; }
+.report-columns-actions { display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid var(--line); padding-top: 10px; }
+
+.report-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.report-table { width: auto; min-width: 100%; }
+.report-table th, .report-table td {
+  white-space: nowrap;
+  border-right: 1px solid var(--line); /* column separators - same thin grey as the row lines, so the grid reads clearly in both directions */
+}
+.report-table th:last-child, .report-table td:last-child { border-right: none; }
+.report-table thead tr:first-child th { position: sticky; top: 0; background: var(--surface); z-index: 2; }
+.report-filter-row th { position: sticky; top: 33px; background: var(--surface-2, #FAFAF8); z-index: 2; padding: 6px 8px; border-bottom: 2px solid var(--line); }
+
+.report-pk-col { font-weight: 700; color: var(--primary-dark); background: var(--primary-soft); }
+
+.report-filter-input {
+  width: 100%; box-sizing: border-box; font-size: 12px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line);
+}
+.report-filter-cell-num, .report-filter-cell-date { display: flex; gap: 4px; }
+.report-filter-cell-num select {
+  flex: 0 0 46px; font-size: 11px; padding: 5px 2px; border-radius: 6px; border: 1px solid var(--line);
+}
+.report-filter-cell-num input { flex: 1; min-width: 0; font-size: 12px; padding: 6px 6px; border-radius: 6px; border: 1px solid var(--line); }
+.report-filter-cell-date input { flex: 1; min-width: 0; font-size: 11px; padding: 5px 4px; border-radius: 6px; border: 1px solid var(--line); }
+
+.report-chip {
+  font-size: 10.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--line);
+  color: var(--ink-soft); display: inline-block;
+}
+.report-chip.pos { background: var(--success-soft); color: var(--success); }
+.report-chip.neg { background: var(--danger-soft); color: var(--danger); }
+.report-na { color: var(--muted); }
+
+.report-totals-row td {
+  font-weight: 700; font-size: 12.5px; background: var(--primary-soft); color: var(--primary-dark);
+  border-top: 2px solid var(--primary); padding: 8px; white-space: nowrap;
+}
+.report-totals-label { text-align: left; }
+.report-totals-note { font-weight: 400; font-size: 10.5px; opacity: .75; }
+
+/* =========================================================================
+   INVENTORY VIEW
+   ========================================================================= */
+.inv-kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+.inv-toolbar { display: flex; gap: 10px; margin-bottom: 14px; }
+.inv-toolbar input { max-width: 320px; }
+.inv-table td { vertical-align: middle; }
+.inv-stock-cell { font-weight: 700; }
+.inv-status-badge {
+  font-size: 10.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; text-transform: uppercase;
+  letter-spacing: .3px; display: inline-block;
+}
+.inv-status-badge.ok  { background: var(--success-soft); color: var(--success); }
+.inv-status-badge.low { background: var(--warn-soft); color: var(--warn); }
+.inv-status-badge.out { background: var(--danger-soft); color: var(--danger); }
+.inv-status-badge.na  { background: var(--line); color: var(--muted); }
+.inv-edit-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.inv-edit-row input.inv-stock-input { width: 74px; padding: 6px 8px; }
+.inv-edit-row input.inv-threshold-input { width: 60px; padding: 6px 8px; }
+.inv-step-btn {
+  width: 28px; height: 28px; border-radius: var(--radius-sm); border: 1px solid var(--line);
+  background: var(--surface); cursor: pointer; font-weight: 700; color: var(--ink-soft); line-height: 1;
+}
+.inv-step-btn:hover { background: var(--primary-soft); color: var(--primary-dark); border-color: var(--primary-soft); }
+.inv-track-btn { font-size: 11.5px; }
+.inv-log-row { font-size: 12.5px; padding: 7px 0; border-bottom: 1px dashed var(--line); display: flex; justify-content: space-between; gap: 10px; color: var(--ink-soft); }
+.inv-log-row:last-child { border-bottom: none; }
+.inv-log-row .inv-log-delta.pos { color: var(--success); font-weight: 700; }
+.inv-log-row .inv-log-delta.neg { color: var(--danger); font-weight: 700; }
+.inv-log-empty { color: var(--muted); font-size: 12.5px; padding: 6px 0; }
+
+/* =========================================================================
+   LOOKUP / EDIT VIEW
+   ========================================================================= */
+.lookup-search { display: flex; gap: 10px; max-width: 480px; margin-bottom: 20px; }
+.lookup-search input { flex: 1; }
+.superadmin-gate {
+  background: var(--theme-gate-bg); border: 1px dashed var(--theme-gate-border); padding: 14px; border-radius: var(--radius-md);
+  margin-top: 16px;
+}
+.superadmin-gate h4 { margin: 0 0 10px; font-size: 13px; color: var(--theme-gate-title); }
+
+/* =========================================================================
+   TOASTS / MODALS
+   ========================================================================= */
+.toast-wrap { position: fixed; bottom: 20px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  background: var(--ink); color: #fff; padding: 12px 16px; border-radius: var(--radius-sm);
+  font-size: 13.5px; box-shadow: var(--shadow-md); min-width: 220px; animation: toast-in .18s ease;
+}
+.toast.success { background: var(--primary-dark); }
+.toast.error { background: var(--danger); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(10,20,18,0.5); display: none;
+  align-items: center; justify-content: center; z-index: 150; padding: 16px;
+}
+.modal-overlay.show { display: flex; }
+.modal-box {
+  background: var(--surface); border-radius: var(--radius-lg); padding: 24px; width: 100%; max-width: 420px;
+  box-shadow: var(--shadow-lg); max-height: 88vh; overflow-y: auto;
+}
+.modal-box h3 { margin-top: 0; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+/* =========================================================================
+   RESPONSIVE - TABLET
+   ========================================================================= */
+@media (max-width: 1080px) {
+  .billing-grid { grid-template-columns: 1fr; }
+  .preview-wrap { position: static; }
+  .bill-paper { max-height: none; }
+}
+
+@media (max-width: 900px) {
+  .sidebar { position: fixed; left: -240px; width: 232px; transition: left .2s ease; box-shadow: var(--shadow-lg); }
+  .sidebar.open { left: 0; }
+  .sidebar .nav-label,
+  .sidebar .sidebar-brand .brand-text,
+  .sidebar .sidebar-footer { opacity: 1; pointer-events: auto; }
+  .topbar { display: flex; }
+  .view { padding: 16px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .biller-box { grid-template-columns: 1fr; }
+  .dash-grid { grid-template-columns: 1fr; }
+  .dash-card { flex-direction: column; }
+  .inv-kpi-grid { grid-template-columns: 1fr; }
+  .chart-filter { width: 100%; border-left: none; border-top: 1.5px dashed var(--line); padding-left: 0; padding-top: 12px; }
+  .cf-date-inputs { max-width: 260px; }
+}
+
+@media (max-width: 640px) {
+  .login-card { padding: 30px 20px 24px; }
+  .bill-head { flex-wrap: wrap; }
+  .bill-head .bill-tag { margin-left: 0; text-align: left; }
+  .totals-strip { justify-content: space-between; gap: 12px; }
+  .view-header { flex-direction: column; align-items: flex-start; }
+  /* .biller-table / .lookup-table now always sit inside a .table-scroll
+     wrapper (added directly in the markup) so they scroll horizontally at
+     every width, not just below this breakpoint - nothing extra needed here. */
+  /* Product name always gets its own full-width line at this width; the
+     remaining fields (Price / Qty / Discount % / Total / remove) wrap
+     underneath, as many per line as comfortably fit - see the base
+     .product-row flexbox rules above. */
+  .product-row .autocomplete-wrap { flex-basis: 100%; }
+}
+
+/* -------------------------------------------------------------------------
+   RESPONSIVE - NARROW PHONES (350-380px and similar)
+   ------------------------------------------------------------------------- */
+@media (max-width: 460px) {
+  .bill-table { font-size: 11px; }
+  .bill-paper { padding: 16px 14px 14px; }
+  .biller-table, .lookup-table { font-size: 11.5px; }
+
+  .view { padding: 12px; }
+  .view-header h2 { font-size: 17px; }
+  .view-header p { font-size: 12px; }
+
+  /* Prevent iOS Safari auto-zoom-on-focus by keeping inputs at >=16px */
+  .field input, .field select, .field textarea,
+  .product-row input,
+  .cf-select, .cf-input, .cf-date, .lookup-search input { font-size: 16px; }
+
+  .panel { padding: 14px; }
+  .form-grid { gap: 12px 10px; }
+
+  .product-row { gap: 8px; padding: 8px 0; }
+  .product-row > div { flex: 1 1 78px; }
+  .biller-box { padding: 12px; gap: 8px; }
+
+  .login-card { padding: 26px 16px 20px; }
+  .login-logo { width: 60px; height: 60px; }
+
+  .sidebar.open { width: 78vw; max-width: 260px; }
+
+  .lookup-search { flex-direction: column; }
+  .lookup-search input, .lookup-search button { width: 100%; }
+
+  .kpi-card, .chart-card { padding: 14px; }
+  .chart-filter { gap: 10px; }
+  .cf-pill { font-size: 10px; padding: 5px 9px; }
+  .cf-date-inputs { max-width: none; }
+  .kpi-card .icon { width: 40px; height: 40px; font-size: 20px; }
+  .kpi-card .value { font-size: 24px; }
+
+  .modal-box { padding: 18px; }
+  .biller-box { grid-template-columns: 1fr; }
+}
+
+/* =========================================================================
+   PRINT (used for "Download PDF" via window.print -> Save as PDF)
+   Multi-page: table header repeats; page numbers when content spans pages.
+
+   IMPORTANT: which element prints is controlled explicitly via
+   data-print-target on <body> (set in JS right before window.print()),
+   NOT just "any .bill-paper" - the Create Bill screen has both a LIVE
+   preview (#billPaper, which resets to a blank next bill a moment after
+   saving) and a FROZEN snapshot of what was actually saved (#printSnapshot).
+   Printing always targets whichever id data-print-target names, so a
+   delayed click on Print/Save-as-PDF can never print the wrong bill.
+   ========================================================================= */
+@media print {
+  html, body { overflow: visible !important; height: auto !important; }
+  body * { visibility: hidden; }
+
+  body[data-print-target="printSnapshot"] #printSnapshot,
+  body[data-print-target="printSnapshot"] #printSnapshot *,
+  body[data-print-target="lookupBillPaper"] #lookupBillPaper,
+  body[data-print-target="lookupBillPaper"] #lookupBillPaper * {
+    visibility: visible;
+  }
+  body[data-print-target="printSnapshot"] #printSnapshot,
+  body[data-print-target="lookupBillPaper"] #lookupBillPaper {
+    position: absolute; left: 0; top: 0; width: 100%;
+    box-shadow: none !important; border: none !important; border-radius: 0 !important;
+    max-height: none !important; height: auto !important; overflow: visible !important;
+    padding: 3mm 4mm 5mm 4mm !important;
+  }
+  /* Defensive: no descendant of the printed bill should ever carry its own
+     scrollbar into the printed page, even if something upstream forgot to
+     reset it. */
+  body[data-print-target="printSnapshot"] #printSnapshot *,
+  body[data-print-target="lookupBillPaper"] #lookupBillPaper * {
+    max-height: none !important; overflow: visible !important;
+  }
+  .preview-actions, .print-hide { display: none !important; }
+
+  .bill-head {
+    flex-wrap: nowrap !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    padding-bottom: 6px !important;
+    margin: 0 !important;
+  }
+  .bill-head .bill-logo {
+    width: 100px !important;
+    height: 60px !important;
+    max-width: 100px !important;
+    max-height: 60px !important;
+    object-fit: contain !important;
+  }
+  .bill-head .co-name { font-size: 16px !important; margin: 0 0 1px !important; }
+  .bill-head .co-meta { font-size: 9px !important; line-height: 1.35 !important; }
+  .bill-head .bill-tag .big { font-size: 17px !important; }
+
+  .bill-meta-grid { margin: 8px 0 !important; }
+
+  .bill-table thead { display: table-header-group; }
+  .bill-table tr { page-break-inside: avoid; }
+  .bill-totals, .bill-foot { page-break-inside: avoid; }
+
+  @page {
+    size: A4;
+    margin: 5mm 5mm 8mm 5mm;
+    @bottom-center {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 9px;
+      color: #888;
+    }
+  }
+}
