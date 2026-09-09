@@ -4588,8 +4588,16 @@ document.getElementById('share_send').addEventListener('click', async () => {
 // -------------------------------------------------------------------------
 // 18. INIT - auto restore session on reload (per browser tab)
 // -------------------------------------------------------------------------
-(function init() {
+(async function init() {
   updatePaymentNote();
+  // Theme the login screen itself from Admin Settings, even before anyone
+  // is logged in - the CSS fallback colors only ever act as a backup if
+  // this fails, never the real source.
+  try {
+    const themeRes = await apiGet('getSettings');
+    if (themeRes.ok) applyTheme_(themeRes.settings);
+  } catch (err) { /* CSS fallback colors cover this */ }
+
   const user = sessionStorage.getItem('SJP_user');
   if (user) {
     document.getElementById('whoAmI').textContent = sessionStorage.getItem('SJP_displayName') || user;

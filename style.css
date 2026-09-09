@@ -169,7 +169,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   padding: 24px;
 }
 .login-card {
-  background: var(--theme-login-card-bg);
+  background: var(--theme-login-card-bg, #FFFFFF);
   width: 100%;
   max-width: 400px;
   border-radius: var(--radius-lg);
@@ -185,9 +185,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .login-card h1 {
   font-size: 20px; margin: 0 0 4px;
   letter-spacing: 0.2px;
-  color: var(--theme-login-heading);
+  color: var(--theme-login-heading, #182322);
 }
-.login-card p.sub { color: var(--theme-login-text); font-size: 13px; margin: 0 0 24px; }
+.login-card p.sub { color: var(--theme-login-text, #4B5A57); font-size: 13px; margin: 0 0 24px; }
 .field { text-align: left; margin-bottom: 16px; }
 .field label {
   display: block; font-size: 12px; font-weight: 600; letter-spacing: 0.3px;
