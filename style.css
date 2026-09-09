@@ -165,7 +165,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--theme-login-gradient);
+  background: var(--theme-login-gradient, linear-gradient(135deg, #2778b7 0%, #a8d339 100%));
   padding: 24px;
 }
 .login-card {
