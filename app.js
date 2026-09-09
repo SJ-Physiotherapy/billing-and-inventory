@@ -59,7 +59,7 @@ const state = {
   qrPollTimer: null,
   lastSavedBill: null,
   customCharts: [],
-  themeChartPalette: ['#E1341E', '#FF914D', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57', '#2E86AB', '#6C4FB6', '#1F9E78', '#D4A017', '#7A5C61', '#3D5A80'],
+  themeChartPalette: ['#E1341E', '#a8d339', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57', '#2E86AB', '#6C4FB6', '#1F9E78', '#D4A017', '#7A5C61', '#3D5A80'],
   session: { role: null, billerId: '', billerName: '', billerPassword: '', canAccessTax: false, canAccessBank: false, canAccessFindEdit: false, canAccessStockView: false, canAccessStockEdit: false, canAccessReportDownload: false }
 };
 
@@ -79,7 +79,7 @@ async function apiPost(action, payload) {
 
 async function apiGet(action, params) {
   const qs = new URLSearchParams({ action, token: sessionStorage.getItem('SJP_token') || '', ...(params || {}) }).toString();
-  const res = await fetch(CONFIG.API_URL + '?' + qs);
+  const res = await fetch(CONFIG.API_URL + '?' + qs, { cache: 'no-store' });
   const data = await res.json();
   handleSessionExpiry_(data);
   return data;
@@ -218,6 +218,7 @@ async function bootstrapApp() {
     state.customers = r.customers || [];
     applyTheme_(state.settings);
     applySettingsToUI();
+    styleFieldLabelHints_();
     populateBillerDropdown();
     document.getElementById('f_billId').value = r.nextBillId;
     document.getElementById('f_date').value = new Date().toISOString().slice(0, 10);
@@ -251,6 +252,11 @@ function applySettingsToUI() {
   document.getElementById('s_address').value = s.Address || '';
   document.getElementById('s_website').value = s.Website || '';
   document.getElementById('s_gst').value = s.GSTNumber || '';
+  document.getElementById('s_socialWhatsapp').value = s.SocialWhatsApp || '';
+  document.getElementById('s_socialInstagram').value = s.SocialInstagram || '';
+  document.getElementById('s_socialFacebook').value = s.SocialFacebook || '';
+  document.getElementById('s_socialLinkedin').value = s.SocialLinkedIn || '';
+  document.getElementById('s_socialYoutube').value = s.SocialYouTube || '';
   // invoice / tax tab prefill
   const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   setVal('s_companyEmail', s.CompanyEmail || '');
@@ -286,12 +292,12 @@ function applyTheme_(s) {
 
   // --- Menubar/sidebar, buttons, active-menu-item (existing) ---
   const buttonStyle = s.ThemeButtonStyle || 'gradient-diagonal';
-  const buttonFrom = s.ThemeButtonFrom || '#FF3131';
-  const buttonTo = buttonStyle === 'solid' ? buttonFrom : (s.ThemeButtonTo || '#FF914D');
+  const buttonFrom = s.ThemeButtonFrom || '#2778b7';
+  const buttonTo = buttonStyle === 'solid' ? buttonFrom : (s.ThemeButtonTo || '#a8d339');
   const buttonText = s.ThemeButtonText || '#FFFFFF';
   const sidebarStyle = s.ThemeSidebarStyle || 'gradient-vertical';
-  const sidebarFrom = s.ThemeSidebarFrom || '#FF3131';
-  const sidebarTo = sidebarStyle === 'solid' ? sidebarFrom : (s.ThemeSidebarTo || '#FF914D');
+  const sidebarFrom = s.ThemeSidebarFrom || '#2778b7';
+  const sidebarTo = sidebarStyle === 'solid' ? sidebarFrom : (s.ThemeSidebarTo || '#a8d339');
   const sidebarText = s.ThemeSidebarText || '#FFFFFF';
   const navActiveBg = s.ThemeNavActiveBg || '#FFFFFF';
   const navActiveText = s.ThemeNavActiveText || buttonFrom;
@@ -304,8 +310,8 @@ function applyTheme_(s) {
 
   // --- Login screen ---
   const loginBgStyle = s.ThemeLoginBgStyle || 'gradient-diagonal';
-  const loginBgFrom = s.ThemeLoginBgFrom || '#FF3131';
-  const loginBgTo = loginBgStyle === 'solid' ? loginBgFrom : (s.ThemeLoginBgTo || '#FF914D');
+  const loginBgFrom = s.ThemeLoginBgFrom || '#2778b7';
+  const loginBgTo = loginBgStyle === 'solid' ? loginBgFrom : (s.ThemeLoginBgTo || '#a8d339');
   const loginCardBg = s.ThemeLoginCardBg || '#FFFFFF';
   const loginHeading = s.ThemeLoginHeadingColor || '#182322';
   const loginText = s.ThemeLoginTextColor || '#4B5A57';
@@ -316,16 +322,39 @@ function applyTheme_(s) {
   const sectionHeading = s.ThemeSectionHeadingColor || '#182322';
 
   // --- Tabs (Admin Settings tabs + Reports tabs share the same styling) ---
-  const tabActiveText = s.ThemeTabActiveTextColor || '#FF3131';
+  const tabActiveText = s.ThemeTabActiveTextColor || '#2778b7';
   const tabInactiveText = s.ThemeTabInactiveTextColor || '#4B5A57';
   const tabIndicatorStyle = s.ThemeTabIndicatorStyle || 'gradient-diagonal';
-  const tabIndicatorFrom = s.ThemeTabIndicatorFrom || '#FF3131';
-  const tabIndicatorTo = tabIndicatorStyle === 'solid' ? tabIndicatorFrom : (s.ThemeTabIndicatorTo || '#FF914D');
+  const tabIndicatorFrom = s.ThemeTabIndicatorFrom || '#2778b7';
+  const tabIndicatorTo = tabIndicatorStyle === 'solid' ? tabIndicatorFrom : (s.ThemeTabIndicatorTo || '#a8d339');
 
   // --- Find/Edit "gate" box (Super Admin - Edit This Bill, etc.) ---
   const gateBg = s.ThemeGateBgColor || '#FBF1DC';
   const gateBorder = s.ThemeGateBorderColor || '#E8C766';
   const gateTitle = s.ThemeGateTitleColor || '#C68A1E';
+
+  // --- Bill/PDF design - shared by preview, print, and the emailed PDF ---
+  const billFont = s.ThemeBillFontFamily || "Georgia, 'Times New Roman', Times, serif";
+  const billDiscount = s.ThemeBillDiscountColor || '#B23A2E';
+  const billLogoW = (Number(s.ThemeBillLogoWidth) || 96) + 'px';
+  const billLogoH = (Number(s.ThemeBillLogoHeight) || 58) + 'px';
+
+  // --- Buttons - hover states ---
+  const buttonHoverFrom = s.ThemeButtonHoverFrom || buttonFrom;
+  const buttonHoverTo = buttonStyle === 'solid' ? buttonHoverFrom : (s.ThemeButtonHoverTo || buttonTo);
+  const outlineText = s.ThemeOutlineText || buttonFrom;
+  const outlineBorder = s.ThemeOutlineBorder || outlineText;
+  const outlineHoverBg = s.ThemeOutlineHoverBg || '#FCE2DC';
+  const outlineHoverText = s.ThemeOutlineHoverText || outlineText;
+
+  root.style.setProperty('--theme-bill-font', billFont);
+  root.style.setProperty('--theme-bill-discount', billDiscount);
+  root.style.setProperty('--theme-bill-logo-w', billLogoW);
+  root.style.setProperty('--theme-bill-logo-h', billLogoH);
+  root.style.setProperty('--theme-outline-text', outlineText);
+  root.style.setProperty('--theme-outline-border', outlineBorder);
+  root.style.setProperty('--theme-outline-hover-bg', outlineHoverBg);
+  root.style.setProperty('--theme-outline-hover-text', outlineHoverText);
 
   root.style.setProperty('--theme-button-from', buttonFrom);
   root.style.setProperty('--theme-button-to', buttonTo);
@@ -364,7 +393,7 @@ function applyTheme_(s) {
   root.style.setProperty('--primary-dark', darkenHex_(buttonFrom, 0.28));
   const buttonGradientCss = gradientCss_(buttonStyle, buttonFrom, buttonTo);
   root.style.setProperty('--brand-gradient', buttonGradientCss);
-  root.style.setProperty('--brand-gradient-hover', buttonGradientCss);
+  root.style.setProperty('--brand-gradient-hover', gradientCss_(buttonStyle, buttonHoverFrom, buttonHoverTo));
   root.style.setProperty('--sidebar-gradient', gradientCss_(sidebarStyle, sidebarFrom, sidebarTo));
 
   state.themeChartPalette = (s.ThemeChartPalette || DEFAULT_CHART_PALETTE_.join(','))
@@ -387,11 +416,11 @@ function applyTheme_(s) {
   const setColor = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   setColor('theme_buttonStyle', buttonStyle);
   setColor('theme_buttonFrom', buttonFrom);
-  setColor('theme_buttonTo', s.ThemeButtonTo || '#FF914D');
+  setColor('theme_buttonTo', s.ThemeButtonTo || '#a8d339');
   setColor('theme_buttonText', buttonText);
   setColor('theme_sidebarStyle', sidebarStyle);
   setColor('theme_sidebarFrom', sidebarFrom);
-  setColor('theme_sidebarTo', s.ThemeSidebarTo || '#FF914D');
+  setColor('theme_sidebarTo', s.ThemeSidebarTo || '#a8d339');
   setColor('theme_sidebarText', sidebarText);
   setColor('theme_navActiveBg', navActiveBg);
   setColor('theme_navActiveText', navActiveText);
@@ -405,7 +434,7 @@ function applyTheme_(s) {
 
   setColor('theme_loginBgStyle', loginBgStyle);
   setColor('theme_loginBgFrom', loginBgFrom);
-  setColor('theme_loginBgTo', s.ThemeLoginBgTo || '#FF914D');
+  setColor('theme_loginBgTo', s.ThemeLoginBgTo || '#a8d339');
   setColor('theme_loginCardBg', loginCardBg);
   setColor('theme_loginHeading', loginHeading);
   setColor('theme_loginText', loginText);
@@ -418,11 +447,23 @@ function applyTheme_(s) {
   setColor('theme_tabInactiveText', tabInactiveText);
   setColor('theme_tabIndicatorStyle', tabIndicatorStyle);
   setColor('theme_tabIndicatorFrom', tabIndicatorFrom);
-  setColor('theme_tabIndicatorTo', s.ThemeTabIndicatorTo || '#FF914D');
+  setColor('theme_tabIndicatorTo', s.ThemeTabIndicatorTo || '#a8d339');
 
   setColor('theme_gateBg', gateBg);
   setColor('theme_gateBorder', gateBorder);
   setColor('theme_gateTitle', gateTitle);
+
+  setColor('theme_billFont', billFont);
+  setColor('theme_billDiscount', billDiscount);
+  setColor('theme_billLogoWidth', Number(s.ThemeBillLogoWidth) || 96);
+  setColor('theme_billLogoHeight', Number(s.ThemeBillLogoHeight) || 58);
+
+  setColor('theme_buttonHoverFrom', buttonHoverFrom);
+  setColor('theme_buttonHoverTo', s.ThemeButtonHoverTo || buttonTo);
+  setColor('theme_outlineText', outlineText);
+  setColor('theme_outlineBorder', outlineBorder);
+  setColor('theme_outlineHoverBg', outlineHoverBg);
+  setColor('theme_outlineHoverText', outlineHoverText);
 
   const setChecked = (id, v) => { const el = document.getElementById(id); if (el) el.checked = String(v).toUpperCase() === 'TRUE'; };
   setChecked('theme_billNameBold', s.ThemeBillCompanyNameBold === undefined ? true : s.ThemeBillCompanyNameBold);
@@ -448,7 +489,7 @@ function gradientCss_(style, from, to) {
   return `linear-gradient(${angle}, ${from} 0%, ${to} 100%)`;
 }
 
-const DEFAULT_CHART_PALETTE_ = ['#E1341E', '#FF914D', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57', '#2E86AB', '#6C4FB6', '#1F9E78', '#D4A017', '#7A5C61', '#3D5A80'];
+const DEFAULT_CHART_PALETTE_ = ['#E1341E', '#a8d339', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57', '#2E86AB', '#6C4FB6', '#1F9E78', '#D4A017', '#7A5C61', '#3D5A80'];
 
 // Multiplies each RGB channel toward black by `amount` (0-1) - a small,
 // dependable way to get a matching "dark" shade from any single color the
@@ -491,6 +532,28 @@ function contrastRatio_(hex1, hex2) {
   }
   const l1 = luminance(hex1) + 0.05, l2 = luminance(hex2) + 0.05;
   return l1 > l2 ? l1 / l2 : l2 / l1;
+}
+
+// Every Admin Settings field label that ends in a parenthetical example/note
+// - e.g. "App Logo URL (sidebar / login - square works best)" - gets that
+// note visually separated from the actual field name, so the label itself
+// (what to fill in) reads clearly at a glance and the note (how/why) doesn't
+// compete with it for attention. Runs once against the static markup, so a
+// new field just needs "(...)" at the end of its label text and this picks
+// it up automatically - nothing else to wire up.
+function styleFieldLabelHints_() {
+  document.querySelectorAll('.admin-pane label, .theme-section label').forEach(label => {
+    if (label.querySelector('.field-label-hint')) return; // already processed
+    const text = label.textContent;
+    const m = text.match(/^(.*?)\s*(\([^)]*\))\s*$/);
+    if (!m) return;
+    label.textContent = '';
+    label.appendChild(document.createTextNode(m[1] + ' '));
+    const hint = document.createElement('span');
+    hint.className = 'field-label-hint';
+    hint.textContent = m[2];
+    label.appendChild(hint);
+  });
 }
 
 // Show/hide the "End Color" pickers depending on Gradient vs Solid choice -
@@ -544,20 +607,33 @@ function renderAllThemePreviews_() {
       </div>`;
   }
 
-  // --- Buttons ---
+  // --- Buttons (normal + hover, primary + outline) ---
   const btnBox = document.getElementById('preview_buttons');
   if (btnBox) {
     const style = v('theme_buttonStyle');
     const from = v('theme_buttonFrom'), to = style === 'solid' ? from : v('theme_buttonTo');
     const text = v('theme_buttonText');
+    const hFrom = v('theme_buttonHoverFrom'), hTo = style === 'solid' ? hFrom : v('theme_buttonHoverTo');
+    const outText = v('theme_outlineText'), outBorder = v('theme_outlineBorder');
+    const outHoverBg = v('theme_outlineHoverBg'), outHoverText = v('theme_outlineHoverText');
     btnBox.innerHTML = `
-      <button type="button" disabled style="pointer-events:none;padding:10px 18px;border:none;border-radius:8px;color:${text};font-weight:700;font-size:13px;background:${gradientCss_(style, from, to)};">Save &amp; Generate Bill</button>`;
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+        <button type="button" disabled style="pointer-events:none;padding:10px 18px;border:none;border-radius:8px;color:${text};font-weight:700;font-size:13px;background:${gradientCss_(style, from, to)};">Save &amp; Generate Bill</button>
+        <button type="button" disabled style="pointer-events:none;padding:10px 18px;border:none;border-radius:8px;color:${text};font-weight:700;font-size:13px;background:${gradientCss_(style, hFrom, hTo)};">on hover</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px;">
+        <button type="button" disabled style="pointer-events:none;padding:9px 16px;border-radius:8px;font-weight:700;font-size:13px;background:transparent;color:${outText};border:1.5px solid ${outBorder};">&#8635; Refresh</button>
+        <button type="button" disabled style="pointer-events:none;padding:9px 16px;border-radius:8px;font-weight:700;font-size:13px;background:${outHoverBg};color:${outHoverText};border:1.5px solid ${outHoverText};">on hover</button>
+      </div>`;
   }
 
   // --- Bill header + typography + layout ---
   const billBox = document.getElementById('preview_billHeader');
   if (billBox) {
     const color = v('theme_billHeader');
+    const font = v('theme_billFont') || "Georgia, 'Times New Roman', Times, serif";
+    const logoW = Math.max(20, Number(v('theme_billLogoWidth')) || 96);
+    const logoH = Math.max(20, Number(v('theme_billLogoHeight')) || 58);
     const nameStyle = 'font-weight:' + (checked('theme_billNameBold') ? '800' : '400') +
       ';font-style:' + (checked('theme_billNameItalic') ? 'italic' : 'normal') +
       ';text-decoration:' + (checked('theme_billNameUnderline') ? 'underline' : 'none') + ';';
@@ -565,11 +641,13 @@ function renderAllThemePreviews_() {
       ';font-style:' + (checked('theme_billInfoItalic') ? 'italic' : 'normal') +
       ';text-decoration:' + (checked('theme_billInfoUnderline') ? 'underline' : 'none') + ';';
     const layout = v('theme_billLayout') || 'logo-side';
-    const logoBadge = `<div style="width:44px;height:30px;border-radius:4px;background:#fff;border:1px dashed ${color};display:flex;align-items:center;justify-content:center;font-size:9px;color:${color};flex-shrink:0;">LOGO</div>`;
-    const nameBlock = `<div style="${nameStyle}font-size:16px;color:${color};">SJ Physiotherapy</div><div style="${infoStyle}font-size:10.5px;color:${color};opacity:.85;margin-top:2px;">Bharathiyar Rd, Coimbatore &middot; +91 97897 31317</div>`;
+    // Scaled down to fit the preview box while keeping the true aspect ratio.
+    const scale = Math.min(1, 64 / logoW, 44 / logoH);
+    const logoBadge = `<div style="width:${Math.round(logoW * scale)}px;height:${Math.round(logoH * scale)}px;border-radius:4px;background:#fff;border:1px dashed ${color};display:flex;align-items:center;justify-content:center;font-size:9px;color:${color};flex-shrink:0;">LOGO</div>`;
+    const nameBlock = `<div style="${nameStyle}font-family:${font};font-size:16px;color:${color};">SJ Physiotherapy</div><div style="${infoStyle}font-family:${font};font-size:10.5px;color:${color};opacity:.85;margin-top:2px;">Bharathiyar Rd, Coimbatore &middot; +91 97897 31317</div>`;
     billBox.innerHTML = layout === 'logo-top'
-      ? `<div style="display:flex;justify-content:space-between;align-items:flex-start;">${logoBadge}<div style="font-weight:800;font-size:14px;letter-spacing:1px;color:${color};">SJP-000001</div></div><div style="margin-top:6px;">${nameBlock}</div>`
-      : `<div style="display:flex;gap:10px;align-items:flex-start;">${logoBadge}<div style="flex:1;">${nameBlock}</div><div style="font-weight:800;font-size:14px;letter-spacing:1px;color:${color};">SJP-000001</div></div>`;
+      ? `<div style="display:flex;justify-content:space-between;align-items:flex-start;">${logoBadge}<div style="font-weight:800;font-size:14px;letter-spacing:1px;color:${color};font-family:${font};">SJP-000001</div></div><div style="margin-top:6px;">${nameBlock}</div>`
+      : `<div style="display:flex;gap:10px;align-items:flex-start;">${logoBadge}<div style="flex:1;">${nameBlock}</div><div style="font-weight:800;font-size:14px;letter-spacing:1px;color:${color};font-family:${font};">SJP-000001</div></div>`;
   }
 
   // --- Text & backgrounds (the "real" combined preview + contrast check) ---
@@ -1324,6 +1402,7 @@ function renderPreview() {
     ${totalsHtml}
     ${footHtml}
   `;
+  fitBillScale_('billScaleOuter', 'billPaper');
 }
 
 // -------------------------------------------------------------------------
@@ -1805,7 +1884,7 @@ function renderWidgetResult_(key, d) {
   else if (key === 'pc') drawBarChart(d.productChart || []);
   else if (key === 'bb') drawDonutChart(d.billerChart || []);
   else if (key === 'pm') {
-    const pal = (state.themeChartPalette && state.themeChartPalette.length) ? state.themeChartPalette : ['#E1341E', '#FF914D', '#AE2314'];
+    const pal = (state.themeChartPalette && state.themeChartPalette.length) ? state.themeChartPalette : ['#E1341E', '#a8d339', '#AE2314'];
     drawPieChart([
       { label: 'Cash', value: d.cashAmount || 0, color: pal[0] },
       { label: 'Bank', value: d.bankAmount || 0, color: pal[1] },
@@ -1827,7 +1906,7 @@ function drawBarChart(items) {
   const container = document.getElementById('productBarChart');
   if (!items.length) { container.innerHTML = '<p style="color:var(--muted);font-size:13px;">No data for this filter.</p>'; return; }
 
-  const palette = (state.themeChartPalette && state.themeChartPalette.length) ? state.themeChartPalette : ['#E1341E', '#FF914D', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57'];
+  const palette = (state.themeChartPalette && state.themeChartPalette.length) ? state.themeChartPalette : ['#E1341E', '#a8d339', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57'];
   function colorForIndex(i) { return palette[i % palette.length]; }
   const maxQty = Math.max(...items.map(i => i.qty), 1);
   const barW = 46, gap = 22, chartH = 200, leftPad = 10;
@@ -1888,7 +1967,7 @@ function drawPieChart(items) {
 function drawDonutChart(items) {
   const container = document.getElementById('billerDonutChart');
   if (!container) return;
-  const palette = (state.themeChartPalette && state.themeChartPalette.length) ? state.themeChartPalette : ['#E1341E', '#FF914D', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57', '#2E86AB', '#6C4FB6'];
+  const palette = (state.themeChartPalette && state.themeChartPalette.length) ? state.themeChartPalette : ['#E1341E', '#a8d339', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57', '#2E86AB', '#6C4FB6'];
   const withColor = items.map((it, idx) => ({ label: it.label, value: it.value, amount: it.amount || 0, color: palette[idx % palette.length] }));
   const total = withColor.reduce((s, i) => s + i.value, 0);
   if (!total) { container.innerHTML = '<p style="color:var(--muted);font-size:13px;">No biller data yet.</p>'; return; }
@@ -1949,7 +2028,7 @@ function formatChartNumber_(n, isMoney) {
 
 function drawGenericBarChart(container, labels, values, isMoney) {
   if (!labels.length) { container.innerHTML = '<p style="color:var(--muted);font-size:13px;">No data yet.</p>'; return; }
-  const palette = (state.themeChartPalette && state.themeChartPalette.length) ? state.themeChartPalette : ['#E1341E', '#FF914D', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57'];
+  const palette = (state.themeChartPalette && state.themeChartPalette.length) ? state.themeChartPalette : ['#E1341E', '#a8d339', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57'];
   const maxVal = Math.max.apply(null, values.concat([1]));
   const barW = 46, gap = 22, chartH = 200, leftPad = 10;
   const labelSpace = 120;
@@ -1974,7 +2053,7 @@ function drawGenericBarChart(container, labels, values, isMoney) {
 }
 
 function drawGenericPieOrDonut_(container, labels, values, isDonut, isMoney) {
-  const palette = (state.themeChartPalette && state.themeChartPalette.length) ? state.themeChartPalette : ['#E1341E', '#FF914D', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57'];
+  const palette = (state.themeChartPalette && state.themeChartPalette.length) ? state.themeChartPalette : ['#E1341E', '#a8d339', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57'];
   const total = values.reduce((s, v) => s + v, 0);
   if (!total) { container.innerHTML = '<p style="color:var(--muted);font-size:13px;">No data yet.</p>'; return; }
   const items = labels.map((label, i) => ({ label, value: values[i], color: palette[i % palette.length] }));
@@ -2381,6 +2460,35 @@ function recalcEditTotals() {
 
 
 
+// Makes a bill preview show at its TRUE fixed-width design (matching print/
+// PDF/email exactly - see .bill-scale-inner's 800px width in style.css)
+// instead of reflowing narrower on a phone, which used to make it look like
+// a cramped, differently-designed mini version rather than a small photo of
+// the real document. Shrinks the whole thing down with a CSS transform
+// (which preserves every proportion exactly) and then sets the OUTER
+// wrapper's height to match, since a transform doesn't affect layout flow
+// on its own and would otherwise leave a tall gap of blank space below.
+function fitBillScale_(outerId, innerId) {
+  const outer = document.getElementById(outerId);
+  const inner = document.getElementById(innerId);
+  if (!outer || !inner) return;
+  const apply = () => {
+    const scale = Math.min(1, outer.clientWidth / 800);
+    inner.style.transform = 'scale(' + scale + ')';
+    outer.style.height = (inner.scrollHeight * scale) + 'px';
+  };
+  apply();
+  // Re-fit on resize/rotate - rAF-throttled so a drag-resize doesn't spam layout work.
+  if (!outer._fitBillScaleBound) {
+    outer._fitBillScaleBound = true;
+    let raf = null;
+    window.addEventListener('resize', () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(apply);
+    });
+  }
+}
+
 function renderLookupBillPaper(bill) {
   const s = state.settings || {};
   const taxOverride = bill.taxOverride === 'TRUE';
@@ -2390,7 +2498,7 @@ function renderLookupBillPaper(bill) {
   const { totalsHtml, footHtml } = buildBillTotalsAndFooterHtml(totals, bill.totalQty, s, bill.billerName || '', bill.versionNote || '', bankOverride);
 
   return `
-    <div class="bill-paper" id="lookupBillPaper">
+    <div class="bill-paper bill-scale-inner" id="lookupBillPaper">
       ${buildCompanyHeadHtml(s, bill.billId)}
       ${buildCustomerMetaHtml({
         date: formatBillDate(bill.date),
@@ -2541,15 +2649,17 @@ function renderLookupResult(bill) {
 
     <div class="panel" style="margin-top:16px;">
       <h3>PDF Version</h3>
+      <p class="field-hint" style="margin:-4px 0 12px;">Shown at the exact size and proportions it will print, download or email at - scaled to fit your screen, not reflowed to it.</p>
       <button id="lookupDownloadPdfBtn" class="btn btn-accent btn-sm print-hide" style="margin-bottom:14px;">&#11015;&#65039; Download / Print PDF</button>
       <button id="lookupShareBtn" class="btn btn-outline btn-sm print-hide" style="margin-bottom:14px; margin-left:8px;">&#128228; Share Bill</button>
-      ${renderLookupBillPaper(bill)}
+      <div class="bill-scale-outer" id="lookupBillScaleOuter">${renderLookupBillPaper(bill)}</div>
     </div>
   `;
 
   // From this point on, Print/Save-as-PDF (in the Share popup below) should
   // print THIS bill, not whatever was last saved on the Create Bill screen.
   document.body.setAttribute('data-print-target', 'lookupBillPaper');
+  fitBillScale_('lookupBillScaleOuter', 'lookupBillPaper');
 
   if (!isEditable) {
     document.getElementById('lookupDownloadPdfBtn').addEventListener('click', () => window.print());
@@ -2700,14 +2810,16 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
 // -------------------------------------------------------------------------
 const THEME_LIVE_PREVIEW_COLOR_IDS_ = [
   'theme_sidebarFrom', 'theme_sidebarTo', 'theme_sidebarText', 'theme_navActiveBg', 'theme_navActiveText',
-  'theme_buttonFrom', 'theme_buttonTo', 'theme_buttonText',
+  'theme_buttonFrom', 'theme_buttonTo', 'theme_buttonText', 'theme_buttonHoverFrom', 'theme_buttonHoverTo',
+  'theme_outlineText', 'theme_outlineBorder', 'theme_outlineHoverBg', 'theme_outlineHoverText',
   'theme_billHeader', 'theme_heading', 'theme_muted', 'theme_bg', 'theme_surface', 'theme_border',
   'theme_loginBgFrom', 'theme_loginBgTo', 'theme_loginCardBg', 'theme_loginHeading', 'theme_loginText',
   'theme_pageHeading', 'theme_pageSubheading', 'theme_sectionHeading',
   'theme_tabActiveText', 'theme_tabInactiveText', 'theme_tabIndicatorFrom', 'theme_tabIndicatorTo',
   'theme_gateBg', 'theme_gateBorder', 'theme_gateTitle', 'theme_billLayout',
   'theme_billNameBold', 'theme_billNameItalic', 'theme_billNameUnderline',
-  'theme_billInfoBold', 'theme_billInfoItalic', 'theme_billInfoUnderline'
+  'theme_billInfoBold', 'theme_billInfoItalic', 'theme_billInfoUnderline',
+  'theme_billFont', 'theme_billDiscount', 'theme_billLogoWidth', 'theme_billLogoHeight'
 ].concat(Array.from({ length: 12 }, (_, i) => 'theme_chart' + i));
 
 THEME_LIVE_PREVIEW_COLOR_IDS_.forEach(id => {
@@ -2719,6 +2831,17 @@ THEME_LIVE_PREVIEW_COLOR_IDS_.forEach(id => {
 ['theme_sidebarStyle', 'theme_buttonStyle', 'theme_loginBgStyle', 'theme_tabIndicatorStyle'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('change', () => { toggleThemeGradientFields_(); renderAllThemePreviews_(); });
+});
+
+// Logo size quick-presets (Square / Wide rectangle / Tall rectangle) - just
+// fill in the same two Width/Height number fields a manual entry would, so
+// there's exactly one code path (no separate "preset mode" to keep in sync).
+document.querySelectorAll('.theme-preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('theme_billLogoWidth').value = btn.dataset.w;
+    document.getElementById('theme_billLogoHeight').value = btn.dataset.h;
+    renderAllThemePreviews_();
+  });
 });
 
 // Reads a checkbox as the 'TRUE'/'FALSE' strings the backend Settings sheet
@@ -2778,7 +2901,19 @@ function collectThemeFieldsFromForm_() {
     ThemeBillCompanyInfoBold: boolFieldVal_('theme_billInfoBold'),
     ThemeBillCompanyInfoItalic: boolFieldVal_('theme_billInfoItalic'),
     ThemeBillCompanyInfoUnderline: boolFieldVal_('theme_billInfoUnderline'),
-    ThemeBillHeaderLayout: fv('theme_billLayout')
+    ThemeBillHeaderLayout: fv('theme_billLayout'),
+
+    ThemeBillFontFamily: fv('theme_billFont'),
+    ThemeBillDiscountColor: fv('theme_billDiscount'),
+    ThemeBillLogoWidth: fv('theme_billLogoWidth'),
+    ThemeBillLogoHeight: fv('theme_billLogoHeight'),
+
+    ThemeButtonHoverFrom: fv('theme_buttonHoverFrom'),
+    ThemeButtonHoverTo: fv('theme_buttonHoverTo'),
+    ThemeOutlineText: fv('theme_outlineText'),
+    ThemeOutlineBorder: fv('theme_outlineBorder'),
+    ThemeOutlineHoverBg: fv('theme_outlineHoverBg'),
+    ThemeOutlineHoverText: fv('theme_outlineHoverText')
   };
 }
 
@@ -2828,44 +2963,26 @@ document.getElementById('resetThemeBtn').addEventListener('click', async () => {
 // This is what actually answers "how will I know when it's time to
 // archive?" - runs automatically every time Super Admin opens Admin
 // Settings (billers never see this; they can't reach this screen at all).
-// Below the warning threshold it's just a quiet, always-visible gauge; once
-// it crosses the threshold, a toast warning fires too - once per sitting,
-// so it informs without nagging every click.
+// The live percentage itself is shown per-database in the "Database(s)
+// Status" cards (see renderDatabaseStatus_) - this function's job is just
+// the proactive warning toast, fired once per sitting so it informs
+// without nagging on every click.
 let capacityWarningShownThisSession_ = false;
 async function checkSpreadsheetCapacity_() {
   if (state.session.role === 'biller') return;
   try {
     const r = await apiGet('getCapacityStatus');
-    if (!r.ok) return;
-    const pctText = document.getElementById('capacityPercentText');
-    const fill = document.getElementById('capacityBarFill');
-    const note = document.getElementById('capacityWarningNote');
-    if (!pctText || !fill) return;
-
-    pctText.textContent = r.percentUsed + '% used (' + r.totalCells.toLocaleString() + ' of ' + r.limit.toLocaleString() + ' cells)';
-    fill.style.width = Math.min(100, r.percentUsed) + '%';
-    fill.style.background = r.warning ? 'var(--danger)' : (r.percentUsed >= 50 ? 'var(--warn)' : 'var(--success)');
-
+    if (!r.ok || capacityWarningShownThisSession_) return;
     if (r.blocked) {
-      note.style.display = 'block';
-      note.textContent = 'This database is full - new bills are blocked until you add a new database below (one click, takes a few seconds).';
-      if (!capacityWarningShownThisSession_) {
-        capacityWarningShownThisSession_ = true;
-        toast('This database is full - click "Add New Database" below to keep billing.', 'error');
-      }
+      capacityWarningShownThisSession_ = true;
+      toast('This database is full - click "Add New Database" in Admin Settings to keep billing.', 'error');
     } else if (r.warning) {
-      note.style.display = 'block';
-      note.textContent = 'This spreadsheet is getting full - it\'s a good time to click "Add New Database" below, whenever convenient (no rush, but don\'t leave it too long).';
-      if (!capacityWarningShownThisSession_) {
-        capacityWarningShownThisSession_ = true;
-        toast('This spreadsheet is at ' + r.percentUsed + '% capacity - see "Data Continuity & Row Limits" in Admin Settings.', 'error');
-      }
-    } else {
-      note.style.display = 'none';
+      capacityWarningShownThisSession_ = true;
+      toast('This spreadsheet is at ' + r.percentUsed + '% capacity - see "Data Continuity & Row Limits" in Admin Settings.', 'error');
     }
   } catch (err) {
-    // Non-critical - the static explanation text in that panel still stands
-    // on its own even if this live check fails for some reason.
+    // Non-critical - the per-database cards still show the real number
+    // once Admin Settings actually loads, even if this proactive check fails.
   }
 }
 
@@ -2983,66 +3100,80 @@ document.getElementById('checkDataStatusBtn') && document.getElementById('checkD
     toast('Enter your Super Admin username and password above first.', 'error');
     return;
   }
-  const original = btn.textContent;
-  btn.disabled = true; btn.textContent = 'Checking...';
+  const original = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = 'Checking...';
   try {
     const r = await apiPost('getDataDiagnostics', creds);
     const box = document.getElementById('dataStatusResult');
     if (!r.ok) {
-      box.style.display = 'block';
-      box.innerHTML = '<div class="ds-card ds-card-error"><div class="ds-title">Could not check status</div><div class="ds-sub">' + escapeHtml(r.error || 'Unknown error') + '</div></div>';
+      box.innerHTML = '<div class="ds-db-card ds-db-error">' + escapeHtml(r.error || 'Could not check status') + '</div>';
       return;
     }
-    box.style.display = 'block';
-    box.innerHTML = renderDataStatusCard_(r);
+    box.innerHTML = renderDatabaseStatus_(r);
   } catch (err) {
     toast('Network error while checking status.', 'error');
   } finally {
-    btn.disabled = false; btn.textContent = original;
+    btn.disabled = false; btn.innerHTML = original;
   }
 });
 
-// Clean, modern "status card" for the Data Status & Reset Tools panel -
-// a colored status pill up top, a stat grid for the row counts / next IDs,
-// and a compact archive list, instead of one long run-on line of text.
-function renderDataStatusCard_(r) {
-  const hasArchives = r.archives && r.archives.length > 0;
-  const archiveHtml = hasArchives
-    ? '<div class="ds-archive-list">' + r.archives.map(a =>
-        '<div class="ds-archive-row">' +
-          '<span class="ds-archive-dot' + (a.reachable ? '' : ' unreachable') + '"></span>' +
-          '<span class="ds-archive-name">' + escapeHtml(a.name) + '</span>' +
-          '<span class="ds-archive-label">' + escapeHtml(a.label) + '</span>' +
-          (a.url ? '<a class="ds-archive-link" href="' + a.url + '" target="_blank" rel="noopener">Open &#8594;</a>' : '') +
-          (a.reachable ? '' : '<span class="ds-archive-warn">unreachable</span>') +
-        '</div>').join('')
-      + '</div>'
-    : '<div class="ds-archive-empty">None linked - this active spreadsheet is the only one in use.</div>';
+// One card per database this app knows about (the active one, plus every
+// archive) - a colored name pill, an Active/Archived badge, a capacity
+// progress bar, row counts, and (active only) the Next ID predictions.
+// Shared by both the Refresh button and the "reset done" confirmation.
+function renderDatabaseStatus_(r) {
+  const cards = [renderDbCard_(r.active, true)].concat((r.archives || []).map(a => renderDbCard_(a, false)));
+  return '<div class="ds-db-list">' + cards.join('') + '</div>';
+}
+
+function renderDbCard_(db, isActive) {
+  if (db.reachable === false) {
+    return `
+      <div class="ds-db-card ds-db-archived">
+        <div class="ds-db-top">
+          <div class="ds-db-name-pill ds-db-pill-muted">${escapeHtml(db.label || 'Archive')}</div>
+          <span class="ds-db-badge ds-db-badge-archived">Archived</span>
+        </div>
+        <div class="ds-db-unreachable">&#9888;&#65039; Not reachable right now - deleted or unshared.</div>
+      </div>`;
+  }
+  const pct = Math.min(100, Math.round((db.percentUsed || 0) * 10) / 10);
+  const counts = db.rowCounts;
+
+  // Active: capacity bar, then a plain 2-column list - "Bills / Customers /
+  // Products" on the left, "Next Bill / Next Customer / Next Product" on
+  // the right, lined up row by row. Archived: just the row counts, single
+  // column, no capacity bar and no Next IDs (a frozen database has neither).
+  const progressHtml = isActive ? `
+      <div class="ds-db-progress">
+        <div class="ds-db-progress-bar"><div class="ds-db-progress-fill" style="width:${pct}%;"></div></div>
+        <span class="ds-db-progress-text">${pct}% / 100%</span>
+      </div>` : '';
+
+  const rowsHtml = !counts ? '' : isActive ? `
+      <div class="ds-db-rows">
+        <div class="ds-db-row"><span class="ds-db-row-label">Bills</span><span class="ds-db-row-value">${counts.bills}</span></div>
+        <div class="ds-db-row"><span class="ds-db-row-label">Next Bills</span><span class="ds-db-row-value">${escapeHtml(db.nextBillId)}</span></div>
+        <div class="ds-db-row"><span class="ds-db-row-label">Customers</span><span class="ds-db-row-value">${counts.customers}</span></div>
+        <div class="ds-db-row"><span class="ds-db-row-label">Next Customers</span><span class="ds-db-row-value">${escapeHtml(db.nextCustomerId)}</span></div>
+        <div class="ds-db-row"><span class="ds-db-row-label">Products</span><span class="ds-db-row-value">${counts.products}</span></div>
+        <div class="ds-db-row"><span class="ds-db-row-label">Next Products</span><span class="ds-db-row-value">${escapeHtml(db.nextProductId)}</span></div>
+      </div>` : `
+      <div class="ds-db-rows ds-db-rows-single">
+        <div class="ds-db-row"><span class="ds-db-row-label">Bills</span><span class="ds-db-row-value">${counts.bills}</span></div>
+        <div class="ds-db-row"><span class="ds-db-row-label">Customers</span><span class="ds-db-row-value">${counts.customers}</span></div>
+        <div class="ds-db-row"><span class="ds-db-row-label">Products</span><span class="ds-db-row-value">${counts.products}</span></div>
+      </div>`;
 
   return `
-    <div class="ds-card">
-      <div class="ds-status-row">
-        <span class="ds-status-badge"><span class="ds-status-dot"></span>Active</span>
-        <div class="ds-status-name">${escapeHtml(r.activeSpreadsheetName)}</div>
-        <a class="ds-status-open" href="${r.activeSpreadsheetUrl}" target="_blank" rel="noopener">Open sheet &#8594;</a>
+    <div class="ds-db-card ${isActive ? 'ds-db-active' : 'ds-db-archived'}">
+      <div class="ds-db-top">
+        <div class="ds-db-name-pill ${isActive ? '' : 'ds-db-pill-muted'}">${escapeHtml(db.name)}</div>
+        <span class="ds-db-badge ${isActive ? 'ds-db-badge-active' : 'ds-db-badge-archived'}">${isActive ? 'Active' : 'Archived'}</span>
       </div>
-
-      <div class="ds-stat-grid">
-        <div class="ds-stat"><div class="ds-stat-value">${r.activeRowCounts.bills}</div><div class="ds-stat-label">Bills</div></div>
-        <div class="ds-stat"><div class="ds-stat-value">${r.activeRowCounts.customers}</div><div class="ds-stat-label">Customers</div></div>
-        <div class="ds-stat"><div class="ds-stat-value">${r.activeRowCounts.products}</div><div class="ds-stat-label">Products</div></div>
-      </div>
-
-      <div class="ds-section-label">Linked Archives</div>
-      ${archiveHtml}
-
-      <div class="ds-next-ids">
-        <div class="ds-next-id"><span class="ds-next-id-label">Next Bill</span><span class="ds-next-id-value">${escapeHtml(r.nextBillId)}</span></div>
-        <div class="ds-next-id"><span class="ds-next-id-label">Next Customer</span><span class="ds-next-id-value">${escapeHtml(r.nextCustomerId)}</span></div>
-        <div class="ds-next-id"><span class="ds-next-id-label">Next Product</span><span class="ds-next-id-value">${escapeHtml(r.nextProductId)}</span></div>
-      </div>
-
-      ${hasArchives ? '<div class="ds-note">If these numbers look higher than expected, or Reports show unfamiliar data, it\'s almost always a linked archive above - use "Reset Numbering &amp; Forget Old Archives" if you no longer need it.</div>' : ''}
+      ${db.url ? '<div class="ds-db-sheetname"><a href="' + db.url + '" target="_blank" rel="noopener">Open sheet &rarr;</a></div>' : ''}
+      ${progressHtml}
+      ${rowsHtml}
     </div>`;
 }
 
@@ -3060,29 +3191,18 @@ document.getElementById('resetToActiveOnlyBtn') && document.getElementById('rese
     'Use this after manually clearing rows directly in the sheet, or after testing "Add New Database" and deciding to start over. Continue?'
   )) return;
 
-  const original = btn.textContent;
-  btn.disabled = true; btn.textContent = 'Resetting...';
+  const original = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = 'Resetting...';
   try {
     const r = await apiPost('resetToActiveOnly', creds);
     if (!r.ok) { toast(r.error || 'Reset failed', 'error'); return; }
     toast('Reset done - numbering now matches this spreadsheet only.', 'success');
-    const box = document.getElementById('dataStatusResult');
-    box.style.display = 'block';
-    box.innerHTML = `
-      <div class="ds-card ds-card-success">
-        <div class="ds-status-row"><span class="ds-status-badge ds-status-badge-success"><span class="ds-status-dot"></span>Done</span></div>
-        <div class="ds-sub" style="margin:2px 0 12px;">Any linked archives were forgotten. Numbering now starts fresh from what's actually in this sheet.</div>
-        <div class="ds-next-ids">
-          <div class="ds-next-id"><span class="ds-next-id-label">Next Bill</span><span class="ds-next-id-value">${escapeHtml(r.nextBillId)}</span></div>
-          <div class="ds-next-id"><span class="ds-next-id-label">Next Customer</span><span class="ds-next-id-value">${escapeHtml(r.nextCustomerId)}</span></div>
-          <div class="ds-next-id"><span class="ds-next-id-label">Next Product</span><span class="ds-next-id-value">${escapeHtml(r.nextProductId)}</span></div>
-        </div>
-      </div>`;
+    document.getElementById('checkDataStatusBtn').click();
     checkSpreadsheetCapacity_();
   } catch (err) {
     toast('Network error while resetting.', 'error');
   } finally {
-    btn.disabled = false; btn.textContent = original;
+    btn.disabled = false; btn.innerHTML = original;
   }
 });
 
@@ -3239,6 +3359,11 @@ document.getElementById('saveSettingsBtn').addEventListener('click', async () =>
     Address: document.getElementById('s_address').value.trim(),
     Website: document.getElementById('s_website').value.trim(),
     GSTNumber: document.getElementById('s_gst').value.trim(),
+    SocialWhatsApp: document.getElementById('s_socialWhatsapp').value.trim(),
+    SocialInstagram: document.getElementById('s_socialInstagram').value.trim(),
+    SocialFacebook: document.getElementById('s_socialFacebook').value.trim(),
+    SocialLinkedIn: document.getElementById('s_socialLinkedin').value.trim(),
+    SocialYouTube: document.getElementById('s_socialYoutube').value.trim(),
     RazorpayKeyId: document.getElementById('s_rpKeyId').value.trim(),
     RazorpayKeySecret: document.getElementById('s_rpKeySecret').value.trim()
   };
@@ -4344,6 +4469,36 @@ document.getElementById('shareViaEmailBtn').addEventListener('click', () => {
   document.getElementById('share_send').textContent = 'Send Email';
 });
 
+// Renders the exact same branded HTML the customer's email will contain
+// (see apiGetEmailPreview / buildBrandedEmailShell_ in Code.gs) inside a
+// sandboxed iframe, so there's no surprise between what the biller previews
+// and what actually lands in the customer's inbox.
+document.getElementById('shareEmailPreviewBtn').addEventListener('click', async () => {
+  const billId = document.getElementById('share_billId').value;
+  const btn = document.getElementById('shareEmailPreviewBtn');
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Loading preview...';
+  try {
+    const r = await apiGet('getEmailPreview', { billId });
+    if (!r.ok) { toast(r.error || 'Could not load email preview', 'error'); return; }
+    document.getElementById('emailPreviewFrame').srcdoc = r.html;
+    document.getElementById('emailPreviewModal').classList.add('show');
+  } catch (err) {
+    toast('Network error while loading email preview.', 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = original;
+  }
+});
+document.getElementById('emailPreview_close').addEventListener('click', () => {
+  document.getElementById('emailPreviewModal').classList.remove('show');
+});
+// "Send Email" from inside the preview is a shortcut for the same Send
+// button in the Share modal underneath - one send code path, not two.
+document.getElementById('emailPreview_send').addEventListener('click', () => {
+  document.getElementById('emailPreviewModal').classList.remove('show');
+  document.getElementById('share_send').click();
+});
+
 document.getElementById('shareViaWhatsappBtn').addEventListener('click', () => {
   shareMethod = 'whatsapp';
   document.getElementById('shareWhatsappField').style.display = 'block';
@@ -4443,4 +4598,3 @@ document.getElementById('share_send').addEventListener('click', async () => {
     bootstrapApp();
   }
 })();
-

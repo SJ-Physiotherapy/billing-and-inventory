@@ -255,8 +255,10 @@
             </div>
             <span class="field-hint">Download, print, email &amp; WhatsApp options appear after you save the bill.</span>
           </div>
-          <div class="bill-paper" id="billPaper">
-            <div class="bill-empty-hint">Fill in the details on the left to see the live bill preview here.</div>
+          <div class="bill-scale-outer" id="billScaleOuter">
+            <div class="bill-paper bill-scale-inner" id="billPaper">
+              <div class="bill-empty-hint">Fill in the details on the left to see the live bill preview here.</div>
+            </div>
           </div>
           <!-- Frozen copy of the bill exactly as it looked the moment it was
                saved. Print/Save-as-PDF (from the Share popup) always print
@@ -657,6 +659,30 @@
               <label>GST Number</label>
               <input id="s_gst" type="text">
             </div>
+            <div class="field span-2">
+              <label>Social Links (used only in the emailed invoice's footer)</label>
+              <p class="field-hint" style="margin:0 0 10px;">Leave any of these blank to simply not show that icon. Phone and Company Email above are reused automatically for the phone/mail icons - nothing to fill in for those two.</p>
+            </div>
+            <div class="field">
+              <label>WhatsApp Number</label>
+              <input id="s_socialWhatsapp" type="text" placeholder="9629495946">
+            </div>
+            <div class="field">
+              <label>Instagram URL</label>
+              <input id="s_socialInstagram" type="text" placeholder="https://instagram.com/yourprofile">
+            </div>
+            <div class="field">
+              <label>Facebook URL</label>
+              <input id="s_socialFacebook" type="text" placeholder="https://facebook.com/yourprofile">
+            </div>
+            <div class="field">
+              <label>LinkedIn URL</label>
+              <input id="s_socialLinkedin" type="text" placeholder="https://linkedin.com/company/yourprofile">
+            </div>
+            <div class="field">
+              <label>YouTube URL</label>
+              <input id="s_socialYoutube" type="text" placeholder="https://youtube.com/@yourprofile">
+            </div>
             <div class="field">
               <label>Razorpay Key ID</label>
               <input id="s_rpKeyId" type="text" placeholder="rzp_live_xxxxx">
@@ -792,67 +818,26 @@
             </table>
           </div>
 
-          <div class="panel" style="margin-top:18px;background:var(--primary-soft);border:none;">
-            <h3 style="margin-top:0;">Data Continuity &amp; Row Limits</h3>
-
-            <div id="capacityGauge" style="margin-bottom:12px;">
-              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
-                <span style="font-size:12.5px;font-weight:600;color:var(--ink-soft);">Current spreadsheet capacity used</span>
-                <span id="capacityPercentText" style="font-size:12.5px;font-weight:700;color:var(--ink-soft);">Checking…</span>
-              </div>
-              <div style="height:8px;border-radius:99px;background:rgba(0,0,0,.08);overflow:hidden;">
-                <div id="capacityBarFill" style="height:100%;width:0%;border-radius:99px;background:var(--success);transition:width .4s ease, background .4s ease;"></div>
-              </div>
-              <div id="capacityWarningNote" style="display:none;margin-top:8px;font-size:12.5px;font-weight:600;color:var(--danger);"></div>
+          <div class="ds-panel" style="margin-top:18px;">
+            <div class="ds-panel-head">
+              <h4>Database(s) Status</h4>
+              <button type="button" class="btn btn-outline btn-sm" id="checkDataStatusBtn">&#8635; Refresh</button>
             </div>
-
-            <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:0 0 8px;">
-              Every Google Sheet has a hard ceiling of about <b>1 crore (10,000,000) cells total</b> - split across
-              every tab and column, not 1 crore rows on just one sheet. For a shop doing even a few hundred bills a
-              day, that's many, many years away - this isn't an urgent concern, just something worth planning for.
-              The <b>Reports</b> menu shows the most recent <b>5,000</b> records per report to stay fast; older
-              history always stays safe in the sheet, it's just not listed there by default.
-            </p>
-            <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:0 0 8px;">
-              This app is already built for the day you eventually need to switch spreadsheets - Invoice IDs,
-              Customer IDs and Product IDs will keep counting up with no gap or restart, and every Report / Find Bill
-              search will keep showing both the old and new spreadsheet's data together, automatically.
-            </p>
-
-            <div style="background:var(--surface);border-radius:var(--radius-sm);padding:14px;margin:14px 0;">
-              <h4 style="margin:0 0 6px;font-size:13.5px;">&#10133; Add New Database (Automatic - 1 Click)</h4>
-              <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin:0 0 12px;">
-                Creates a brand-new database, copies your Billers, Products and Customers into it automatically,
-                and archives the current one as read-only - all in one click, right here on the website. No
-                Apps Script, no spreadsheet IDs to copy, nothing to configure. Use this any time the gauge above
-                is getting full, or as soon as billing gets blocked.
-              </p>
-              <button type="button" class="btn btn-primary btn-sm" id="addNewDatabaseBtn">
-                &#10133; Add New Database Now
-              </button>
-              <div id="dbExpandResult" style="display:none;margin-top:10px;font-size:12.5px;color:var(--ink-soft);line-height:1.6;background:var(--primary-soft);border-radius:var(--radius-sm);padding:10px 12px;"></div>
+            <div id="dataStatusResult">
+              <div class="ds-loading">Enter your Super Admin credentials above, then click Refresh to view database status.</div>
             </div>
-
-            <div class="ds-tool-card">
-              <h4 style="margin:0 0 6px;font-size:13.5px;">&#128269; Data Status &amp; Reset Tools</h4>
-              <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin:0 0 12px;">
-                Invoice, Customer and Product numbers are tracked by this app separately from the spreadsheet itself
-                - that's deliberate, it's what lets numbering carry on smoothly across an "Add New Database" switch.
-                The trade-off: if you ever edit the spreadsheet directly (clear rows by hand, test "Make a copy",
-                try the database switch and change your mind), those numbers won't automatically notice. Use
-                "Check Status" any time something looks off, and "Reset" to fix it.
-              </p>
-              <div style="display:flex;flex-wrap:wrap;gap:10px;">
-                <button type="button" class="btn btn-outline btn-sm" id="checkDataStatusBtn">&#128269; Check Data Status</button>
-                <button type="button" class="btn btn-outline btn-sm" id="resetToActiveOnlyBtn" style="color:var(--danger);border-color:var(--danger);">&#9888;&#65039; Reset Numbering &amp; Forget Old Archives</button>
-              </div>
-              <div id="dataStatusResult" style="display:none;margin-top:14px;"></div>
+            <div class="ds-actions">
+              <button type="button" class="btn btn-primary btn-sm" id="addNewDatabaseBtn">&#10133; Add New Database Now</button>
+              <button type="button" class="btn btn-outline btn-sm ds-danger-btn" id="resetToActiveOnlyBtn">&#9888;&#65039; Reset Numbering &amp; Forget Old Archives</button>
             </div>
-
-            <p style="font-size:12.5px;color:var(--muted);line-height:1.6;margin:14px 0 0;">
-              Note: once a spreadsheet is archived (via "Add New Database" above), its invoices become read-only
-              (Find/Edit Bill will show them but won't allow changes) - the same principle as not editing a closed
-              financial year's books.
+            <div id="dbExpandResult" style="display:none;margin-top:12px;font-size:12.5px;color:var(--ink-soft);line-height:1.6;background:var(--bg);border-radius:var(--radius-sm);padding:10px 12px;"></div>
+            <p class="ds-note">
+              Invoice, Customer and Product numbers are tracked by this app separately from the spreadsheet
+              itself - that's deliberate, it's what lets numbering carry on smoothly across an "Add New Database"
+              switch. If you ever edit a spreadsheet directly (clear rows by hand, test "Make a copy"), those
+              numbers won't automatically notice - use Refresh any time something looks off, and Reset to fix it.
+              Once a spreadsheet is archived, its invoices become read-only (Find/Edit Bill will show them but
+              won't allow changes) - the same principle as not editing a closed financial year's books.
             </p>
           </div>
         </div>
@@ -965,7 +950,7 @@
           <!-- ===== BUTTONS & ACCENT ===== -->
           <div class="theme-section">
             <h4 class="theme-section-title">Buttons &amp; Accent</h4>
-            <p class="field-hint" style="margin:-6px 0 12px;">Also used for links and focus outlines throughout the app (separate from the Active Menu colors above).</p>
+            <p class="field-hint" style="margin:-6px 0 12px;">Also used for links and focus outlines throughout the app (separate from the Active Menu colors above). "Solid/Bordered" buttons below covers Logout, Refresh, Check Data Status, Reset Numbering, and every other button styled that way.</p>
             <div class="theme-row">
               <div class="theme-row-controls">
                 <div class="field">
@@ -990,8 +975,42 @@
                   <input id="theme_buttonText" type="color" value="#FFFFFF">
                 </div>
               </div>
-              <div class="theme-preview-box">
-                <div class="theme-preview-label">Preview</div>
+            </div>
+            <div class="theme-row">
+              <div class="theme-row-controls">
+                <p class="field-hint" style="margin:0 0 8px;width:100%;">Filled/gradient buttons (Save &amp; Generate Bill, etc.) - what they look like on hover.</p>
+                <div class="field">
+                  <label>Hover Start Color</label>
+                  <input id="theme_buttonHoverFrom" type="color" value="#FF3131">
+                </div>
+                <div class="field">
+                  <label>Hover End Color</label>
+                  <input id="theme_buttonHoverTo" type="color" value="#FF914D">
+                </div>
+              </div>
+            </div>
+            <div class="theme-row">
+              <div class="theme-row-controls">
+                <p class="field-hint" style="margin:0 0 8px;width:100%;">Bordered/outline buttons (Logout, Refresh, Check Data Status, etc.) - normal and hover colors.</p>
+                <div class="field">
+                  <label>Text / Border</label>
+                  <input id="theme_outlineText" type="color" value="#FF3131">
+                </div>
+                <div class="field">
+                  <label>Border (if different)</label>
+                  <input id="theme_outlineBorder" type="color" value="#FF3131">
+                </div>
+                <div class="field">
+                  <label>Hover Background</label>
+                  <input id="theme_outlineHoverBg" type="color" value="#FCE2DC">
+                </div>
+                <div class="field">
+                  <label>Hover Text</label>
+                  <input id="theme_outlineHoverText" type="color" value="#FF3131">
+                </div>
+              </div>
+              <div class="theme-preview-box" style="flex:1 1 260px;">
+                <div class="theme-preview-label">Preview (top: normal / bottom: hover)</div>
                 <div id="preview_buttons"></div>
               </div>
             </div>
@@ -1093,15 +1112,31 @@
             </div>
           </div>
 
-          <!-- ===== BILL HEADER: COLOR, TYPOGRAPHY & LAYOUT ===== -->
+          <!-- ===== BILL / PDF DESIGN ===== -->
           <div class="theme-section">
-            <h4 class="theme-section-title">Bill Header - Color, Typography &amp; Layout</h4>
-            <p class="field-hint" style="margin:-6px 0 12px;">Company name and invoice number at the top of every bill - Create Bill, Find/Edit Bill, print, PDF and email all use these exact same settings.</p>
+            <h4 class="theme-section-title">Bill / PDF Design</h4>
+            <p class="field-hint" style="margin:-6px 0 12px;">One shared design for every bill, wherever it's shown - the on-screen preview, Print, Save-as-PDF, and the emailed invoice (PDF attachment + email body) all use these exact same settings, so a customer never sees two differently-styled versions of the same bill.</p>
             <div class="theme-row">
               <div class="theme-row-controls">
                 <div class="field">
-                  <label>Color</label>
+                  <label>Header Color</label>
                   <input id="theme_billHeader" type="color" value="#E1341E">
+                </div>
+                <div class="field">
+                  <label>Discount / Tax Amount Color</label>
+                  <input id="theme_billDiscount" type="color" value="#B23A2E">
+                </div>
+                <div class="field">
+                  <label>Font</label>
+                  <select id="theme_billFont">
+                    <option value="Georgia, 'Times New Roman', Times, serif">Georgia (serif)</option>
+                    <option value="'Times New Roman', Times, serif">Times New Roman (serif)</option>
+                    <option value="Cambria, Georgia, serif">Cambria (serif)</option>
+                    <option value="Arial, Helvetica, sans-serif">Arial (sans-serif)</option>
+                    <option value="'Trebuchet MS', Helvetica, sans-serif">Trebuchet MS (sans-serif)</option>
+                    <option value="Verdana, Geneva, sans-serif">Verdana (sans-serif)</option>
+                    <option value="'Courier New', Courier, monospace">Courier New (monospace)</option>
+                  </select>
                 </div>
                 <div class="field">
                   <label>Header Layout</label>
@@ -1114,6 +1149,24 @@
               <div class="theme-preview-box" style="flex:1 1 280px;">
                 <div class="theme-preview-label">Preview</div>
                 <div id="preview_billHeader"></div>
+              </div>
+            </div>
+            <div class="theme-row">
+              <div class="theme-row-controls">
+                <div class="field" style="min-width:220px;">
+                  <label>Logo Size (px)</label>
+                  <div style="display:flex;gap:8px;align-items:center;">
+                    <input id="theme_billLogoWidth" type="number" min="20" max="400" value="96" style="width:80px;" placeholder="Width">
+                    <span style="color:var(--muted);">&times;</span>
+                    <input id="theme_billLogoHeight" type="number" min="20" max="400" value="58" style="width:80px;" placeholder="Height">
+                  </div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+                    <button type="button" class="btn btn-outline btn-sm theme-preset-btn" data-w="70" data-h="70">Square</button>
+                    <button type="button" class="btn btn-outline btn-sm theme-preset-btn" data-w="130" data-h="50">Wide rectangle</button>
+                    <button type="button" class="btn btn-outline btn-sm theme-preset-btn" data-w="60" data-h="100">Tall rectangle</button>
+                  </div>
+                  <p class="field-hint" style="margin-top:8px;">The logo is never stretched or cropped to fit - pick whatever width/height ratio matches your actual logo file (a wide horizontal wordmark logo needs a wide box, a square badge logo needs an equal width/height).</p>
+                </div>
               </div>
             </div>
             <div class="theme-row">
@@ -1279,6 +1332,7 @@
     <div class="field" id="shareEmailField" style="display:none;">
       <label>Customer Email ID</label>
       <input id="share_email" type="email" placeholder="name@example.com">
+      <button type="button" class="btn btn-outline btn-sm" id="shareEmailPreviewBtn" style="margin-top:10px;">&#128065;&#65039; Preview Email</button>
     </div>
     <div class="field" id="shareWhatsappField" style="display:none;">
       <label>WhatsApp Number (with country code, no + or spaces)</label>
@@ -1288,6 +1342,21 @@
     <div class="modal-actions">
       <button class="btn btn-outline btn-sm" id="share_cancel">Close</button>
       <button class="btn btn-primary btn-sm" id="share_send" style="display:none;">Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== EMAIL PREVIEW MODAL ===================== -->
+<div id="emailPreviewModal" class="modal-overlay">
+  <div class="modal-box modal-box-lg">
+    <h3>Email Preview</h3>
+    <p class="field-hint" style="margin:-6px 0 12px;">Exactly what the customer will receive - same header, footer and bill summary, before you click Send.</p>
+    <div class="email-preview-frame-wrap">
+      <iframe id="emailPreviewFrame" title="Email preview" sandbox=""></iframe>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-sm" id="emailPreview_close">Close</button>
+      <button class="btn btn-primary btn-sm" id="emailPreview_send">Send Email</button>
     </div>
   </div>
 </div>

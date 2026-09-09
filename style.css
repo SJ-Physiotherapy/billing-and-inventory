@@ -1,5 +1,5 @@
 /* =========================================================================
-   SJ PHYSIOTHERAPY - BILLING SYSTEM
+   KOVAI LAKSHMI GRINDERS - BILLING SYSTEM
    Design tokens
    ========================================================================= */
 :root {
@@ -9,54 +9,38 @@
      some browsers don't reliably re-resolve a var() that itself contains
      another var() when used inside border-image, so the composed value is
      computed once in JS and written straight in, everywhere it's needed. */
-  --theme-button-from: #a8d339;
-  --theme-button-to: #2778b7;
+  --theme-button-from: #2778b7;
+  --theme-button-to: #a8d339;
   --theme-button-text: #FFFFFF;
-  --theme-sidebar-from: #a8d339;
-  --theme-sidebar-to: #2778b7;
+  --theme-sidebar-from: #2778b7;
+  --theme-sidebar-to: #a8d339;
   --theme-sidebar-text: #FFFFFF;
   --theme-nav-active-bg: #FFFFFF;
-  --theme-nav-active-text: #a8d339;
-  --theme-bill-header: #a8d339;
+  --theme-nav-active-text: #2778b7;
+  --theme-bill-header: #E1341E;
   --theme-heading: #182322;
   --theme-muted: #4B5A57;
   --theme-bg: #F6F4F3;
   --theme-surface: #FFFFFF;
   --theme-border: #E7DCD8;
 
-  /* Login screen - independent from the sidebar above so a shop can give
-     its login page a different look from its app shell. */
-  --theme-login-gradient: linear-gradient(135deg, #a8d339 0%, #2778b7 100%);
-  --theme-login-card-bg: #FFFFFF;
-  --theme-login-heading: #182322;
-  --theme-login-text: #4B5A57;
+  /* Bill/PDF design - shared by on-screen preview, print, Save-as-PDF and
+     the emailed PDF/email body, so there is exactly one visual design for
+     a bill, not four slightly-different ones. */
+  --theme-bill-font: Georgia, 'Times New Roman', Times, serif;
+  --theme-bill-discount: #B23A2E;
+  --theme-bill-logo-w: 96px;
+  --theme-bill-logo-h: 58px;
 
-  /* Page headings (big page title + its explainer line) and section
-     headings (smaller in-page titles, e.g. "Products", gate-box titles). */
-  --theme-page-heading: #182322;
-  --theme-page-subheading: #4B5A57;
-  --theme-section-heading: #182322;
-
-  /* Tabs - Admin Settings tabs + Reports tabs share this styling. */
-  --theme-tab-active-text: #a8d339;
-  --theme-tab-inactive-text: #4B5A57;
-  --theme-tab-indicator: linear-gradient(135deg, #a8d339 0%, #2778b7 100%);
-
-  /* Find/Edit "gate" box (Super Admin credential + editable-bill box). */
-  --theme-gate-bg: #FBF1DC;
-  --theme-gate-border: #E8C766;
-  --theme-gate-title: #C68A1E;
-
-  /* KPI / number-card colors - Dashboard's 4 cards and Inventory's 3 cards
-     reuse these 4 slots, driven from the first 4 Chart Colors. */
-  --kpi-color-c-teal: #D7263D;
-  --kpi-color-soft-c-teal: #FBE1E4;
-  --kpi-color-c-gold: #C9781C;
-  --kpi-color-soft-c-gold: #FCE8CC;
-  --kpi-color-c-green: #E85D04;
-  --kpi-color-soft-c-green: #FDE7D3;
-  --kpi-color-c-violet: #6C4FB6;
-  --kpi-color-soft-c-violet: #EAE2FA;
+  /* Buttons - normal + hover, for both the solid/gradient "primary" style
+     and the bordered "secondary/outline" style (Logout, Refresh, Check
+     Data Status, Reset Numbering, and anything else sharing .btn-outline). */
+  --theme-button-hover-from: #2778b7;
+  --theme-button-hover-to: #a8d339;
+  --theme-outline-text: #2778b7;
+  --theme-outline-border: #2778b7;
+  --theme-outline-hover-bg: #FCE2DC;
+  --theme-outline-hover-text: #2778b7;
 
   --ink: var(--theme-heading);
   --ink-soft: var(--theme-muted);
@@ -77,16 +61,16 @@
      looks identical to before this feature existed. applyTheme_() 
      overwrites --primary/--brand-gradient/--sidebar-gradient directly with
      fully-resolved values once settings load. */
-  --primary: #a8d339;
-  --primary-dark: #2778b7;
+  --primary: #2778b7;
+  --primary-dark: #AE2314;
   --primary-soft: #FCE2DC;
-  --accent: #59ff4d;
-  --accent-dark: #2be42e;
-  --accent-soft: #fffbda;
-  --brand-gradient: linear-gradient(135deg, #a8d339 0%, #2778b7 100%);
-  --brand-gradient-hover: linear-gradient(135deg, #a8d339 0%, #2778b7 100%);
+  --accent: #a8d339;
+  --accent-dark: #E4712B;
+  --accent-soft: #FFEADA;
+  --brand-gradient: linear-gradient(135deg, #2778b7 0%, #a8d339 100%);
+  --brand-gradient-hover: linear-gradient(135deg, #2778b7 0%, #a8d339 100%);
   --brand-gradient-soft: linear-gradient(135deg, #FFEDEA 0%, #FFF1E4 100%);
-  --sidebar-gradient: linear-gradient(180deg, #a8d339 0%, #2778b7 100%);
+  --sidebar-gradient: linear-gradient(180deg, #2778b7 0%, #a8d339 100%);
 
   /* "Success"/positive states use a warm gold instead of green, per theme */
   --success: #C9781C;
@@ -109,7 +93,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; overflow-x: hidden; }
+html, body { height: 100%; width: 100%; overflow-x: hidden; }
 body {
   margin: 0;
   font-family: var(--font-body);
@@ -120,6 +104,48 @@ body {
 img { max-width: 100%; display: block; }
 button { font-family: inherit; }
 a { color: var(--primary); }
+
+/* -------------------------------------------------------------------------
+   MOBILE HORIZONTAL-OVERFLOW SAFETY NET
+   Root cause of "page is wider than the phone screen even though nothing
+   visibly looks broken": CSS Grid/Flexbox items default to min-width:auto,
+   which means an item is never allowed to shrink narrower than its own
+   content's natural width - a single date input, long price, or number can
+   silently force its whole row (and therefore the whole page) wider than
+   the viewport on a narrow phone, with zero visual sign of it in a
+   screenshot. This resets that default to 0 everywhere the app uses grid/
+   flexbox layouts, so every item is always free to shrink to fit - the
+   existing gap/wrap/grid-template-column rules above are what still
+   control how things actually lay out, this only removes the invisible
+   floor underneath them. Also hard-caps a few element types that can have
+   their own intrinsic widths (form controls, tables, media).
+   NOTE: <button> is deliberately EXCLUDED here - a button's label is plain
+   nowrap text with no overflow clipping, so letting a button's box shrink
+   below its label's width doesn't stop the overflow, it just makes the
+   label spill out and visually overlap whatever sits next to it (this bit
+   the "Add Product/Service Row" buttons on narrow phones). Buttons get
+   flex-wrap on their row instead (see BUTTON GROUPS below), which is the
+   correct fix for that failure mode. ------------------------------------ */
+input, select, textarea { min-width: 0; max-width: 100%; }
+svg, video, iframe, table { max-width: 100%; }
+.form-grid > *, .dash-grid > *, .billing-grid > *, .biller-box > *,
+.inv-kpi-grid > *, .bill-meta-grid > *, .theme-row > *, .theme-row-controls > *,
+.product-row > *, .cf-date-inputs > *, .lookup-search > *, .bill-toggles-wrap > *,
+.app-shell > *, .dash-card > *, .nav-item, .sidebar-brand, .topbar .brand-mini,
+.view-header > * {
+  min-width: 0;
+}
+
+/* -------------------------------------------------------------------------
+   BUTTON GROUPS - any row of 2+ buttons that might not fit side by side on
+   a phone wraps onto its own line(s) instead of shrinking (which, per the
+   note above, would make button labels visually overlap). Buttons keep
+   their natural label width and simply stack when there's no room. ------ */
+.add-product-bar, .preview-actions, .modal-actions, .report-toolbar-right,
+.ds-actions, .inv-toolbar, .report-columns-actions, .theme-checkbox-row {
+  flex-wrap: wrap;
+}
+.add-product-bar .btn { flex: 1 1 180px; }
 
 .hidden { display: none !important; }
 
@@ -139,8 +165,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Independent from the sidebar - see --theme-login-gradient (Theme tab ->
-     Login Screen), instead of reusing the sidebar's colors. */
   background: var(--theme-login-gradient);
   padding: 24px;
 }
@@ -154,7 +178,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   text-align: center;
 }
 .login-logo {
-  width: 72px; height: 72px; border-radius: 50%;
+  width: 100px; height: 100px; border-radius: 50%;
   object-fit: cover; margin: 0 auto 14px;
   border: 3px solid var(--accent-soft);
 }
@@ -178,6 +202,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); outline: none;
 }
 .field-hint { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+/* Every field label inside Admin Settings (all tabs) gets this fixed brand
+   blue, so field names read clearly and consistently no matter what the
+   rest of the theme's colors are set to. */
+.admin-pane .field label, .theme-section .field label { color: #2778b7; }
+/* The "(sidebar / login - square works best)" part of a label - kept
+   visually distinct (muted, not blue) so it reads as a secondary note, not
+   part of the field name itself. See styleFieldLabelHints_() in app.js. */
+.field-label-hint { color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: normal; font-size: 0.92em; }
 .field-error { font-size: 11.5px; color: var(--danger); margin-top: 4px; display: none; }
 .field.has-error input { border-color: var(--danger); }
 .field.has-error .field-error { display: block; }
@@ -193,8 +225,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .btn-primary:hover { background: var(--brand-gradient-hover); }
 .btn-accent { background: var(--brand-gradient); color: var(--theme-button-text); box-shadow: 0 4px 12px -4px rgba(0,0,0,.35); }
 .btn-accent:hover { background: var(--brand-gradient-hover); }
-.btn-outline { background: transparent; color: var(--primary); border: 1.5px solid var(--primary); }
-.btn-outline:hover { background: var(--primary-soft); }
+.btn-outline { background: transparent; color: var(--theme-outline-text); border: 1.5px solid var(--theme-outline-border); }
+.btn-outline:hover { background: var(--theme-outline-hover-bg); color: var(--theme-outline-hover-text); border-color: var(--theme-outline-hover-text); }
 .btn-danger { background: var(--danger-soft); color: var(--danger); }
 .btn-danger:hover { background: var(--danger); color: #fff; }
 .btn-block { width: 100%; }
@@ -261,7 +293,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .sidebar-brand {
   display: flex; align-items: center; gap: 10px; padding: 18px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid rgba(255,255,255,0.12);
 }
 .sidebar-brand img { width: 38px; height: 38px; border-radius: 8px; object-fit: cover; }
 .sidebar-brand .name { font-size: 13.5px; font-weight: 700; line-height: 1.25; white-space: nowrap; }
@@ -454,34 +486,54 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: var(--paper); border-radius: var(--radius-md); box-shadow: var(--shadow-md);
   padding: 26px 26px 20px; max-height: 78vh; overflow-y: auto;
   border: 1px solid var(--line);
+  font-family: var(--theme-bill-font);
 }
 /* Frozen post-save snapshot used only for Print/Save-as-PDF (see the PRINT
    media query) - present in the DOM for printing purposes, but pushed
    off-screen during normal viewing rather than display:none, since a
-   display:none ancestor can't be forced visible again by print CSS. */
-#printSnapshot { position: absolute; left: -9999px; top: 0; width: 800px; }
+   display:none ancestor can't be forced visible again by print CSS.
+   Pushed off-screen VERTICALLY (top), not horizontally - an 800px-wide box
+   sitting at left:-9999px blows the page's horizontal scrollable area out
+   to ~10,000px, and mobile browsers don't reliably respect overflow-x:
+   hidden on body/html against that, letting the whole page be dragged
+   sideways into empty space even though nothing looks different at rest.
+   Pushing it up above the page instead avoids that entirely, since normal
+   vertical scrolling was never restricted in the first place. */
+#printSnapshot { position: absolute; left: 0; top: -9999px; width: 800px; font-family: var(--theme-bill-font); }
+#lookupBillPaper { font-family: var(--theme-bill-font); }
+/* True-to-final-size preview - see fitBillScale_() in app.js. The inner
+   element is always rendered at its real 800px design width (so every font
+   size, margin and the logo all come out at their real proportions, exactly
+   matching print/PDF/email), then visually shrunk with a transform to fit
+   whatever screen it's on - never reflowed into a narrower, cramped layout. */
+.bill-scale-outer { overflow: hidden; }
+.bill-scale-inner { width: 800px; max-width: none; transform-origin: top left; }
+@media print {
+  .bill-scale-outer { overflow: visible; height: auto !important; }
+  .bill-scale-inner { transform: none !important; width: auto; }
+}
+
 .bill-head {
   display: flex; gap: 10px; align-items: flex-start; flex-wrap: nowrap;
   border-bottom: 1.5px solid var(--ink); padding-bottom: 8px;
 }
-/* "Logo above company info" layout (Theme tab -> Bill Header -> Header
-   Layout). The logo + invoice number sit side by side up top, and the
-   company name/info block runs full-width underneath. */
-.bill-head.bill-head-stacked { display: block; }
-.bill-head-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.bill-head-stacked .bill-head-info { margin-top: 6px; }
+/* Size is Theme-controlled (Admin Settings -> Theme -> Bill/PDF Design ->
+   Logo Size) - a square badge logo and a wide horizontal wordmark logo
+   both need very different width:height ratios, so this is two independent
+   px values, not one "size". object-fit:contain means the logo is never
+   stretched or cropped to fit, whatever ratio is chosen. */
 .bill-head .bill-logo {
-  width: 96px;
-  height: 58px;
-  max-width: 96px;
-  max-height: 58px;
+  width: var(--theme-bill-logo-w);
+  height: var(--theme-bill-logo-h);
+  max-width: var(--theme-bill-logo-w);
+  max-height: var(--theme-bill-logo-h);
   border-radius: 4px;
   object-fit: contain;
   flex-shrink: 0;
   background: #fff;
 }
 .bill-head-info { flex: 1; min-width: 0; }
-.bill-head .co-name { font-size: 18px; font-weight: 400; margin: 0 0 4px; color: var(--theme-bill-header); }
+.bill-head .co-name { font-size: 18px; font-weight: 800; margin: 0 0 4px; color: var(--theme-bill-header); }
 .bill-head .co-meta {
   font-size: 10px; color: var(--theme-bill-header); opacity: .9;
   line-height: 1.55; margin: 0;
@@ -491,15 +543,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px;
 }
 .bill-head .bill-tag .big { font-size: 20px; font-weight: 800; letter-spacing: 1px; color: var(--theme-bill-header); }
-
-/* Bill typography switches (Theme tab -> Bill Header -> Company Name /
-   Company Info Bold/Italic/Underline) - applied as classes rather than
-   inline styles so the same markup renders identically on screen, in
-   print, and in "Save as PDF" (all reuse buildCompanyHeadHtml). */
-.bill-font-bold { font-weight: 800 !important; }
-.bill-head .co-meta.bill-font-bold { font-weight: 700 !important; }
-.bill-font-italic { font-style: italic !important; }
-.bill-font-underline { text-decoration: underline !important; }
 
 .bill-meta-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px;
@@ -515,11 +558,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .bill-table td { padding: 7px 4px; border-bottom: 1px solid var(--line); }
 .bill-table td.num, .bill-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.bill-table td.disc { color: #B23A2E; font-size: 11.5px; }
+.bill-table td.disc { color: var(--theme-bill-discount); font-size: 11.5px; }
 
 .bill-totals { margin-top: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .bill-totals .row { display: flex; gap: 24px; font-size: 13px; width: 240px; justify-content: space-between; }
-.bill-totals .row.disc { color: #2eb23d; font-size: 12px; }
+.bill-totals .row.disc { color: var(--theme-bill-discount); font-size: 12px; }
 .bill-totals .grand { font-size: 16px; font-weight: 800; border-top: 2px solid var(--ink); padding-top: 6px; margin-top: 4px; }
 
 .bill-foot {
@@ -538,14 +581,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   margin: 0 auto 4px; background: #fafafa;
 }
 .bill-sign .sign-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
-.bill-empty-hint { text-align: center; color: var(--muted); padding: 60px 10px; font-size: 13px; }
+.bill-empty-hint { text-align: center; color: var(--muted); padding: 90px 20px; font-size: 24px; line-height: 1.4; }
 
 /* =========================================================================
    DASHBOARD
    ========================================================================= */
-/* Dashboard used to hardcode white regardless of the Theme tab's "Page
-   Background" choice - now it inherits the same themed background every
-   other page already uses. */
+/* Dashboard page background - was hardcoded white, completely ignoring the
+   Theme tab's "Page Background" setting (Card/Panel Background WAS already
+   correctly reaching the chart/KPI cards via --surface below - only the
+   page itself, behind those cards, was stuck on white). */
 #view-dashboard { background: var(--bg); }
 
 /* -------------------------------------------------------------------------
@@ -722,65 +766,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   padding: 8px 10px; margin-top: 10px; display: none; line-height: 1.5;
 }
 .theme-warning.show { display: block; }
-.theme-checkbox-row { display: flex; flex-wrap: wrap; gap: 4px 16px; padding-top: 6px; }
-.theme-checkbox {
-  display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;
-  color: var(--ink-soft); cursor: pointer; text-transform: none; letter-spacing: normal;
-}
-.theme-checkbox input { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; }
-
-/* =========================================================================
-   DATA STATUS CARD (Admin Settings -> Shop Details -> Data Status & Reset
-   Tools) - a clean, modern status readout instead of one long text block.
-   ========================================================================= */
-.ds-tool-card { background: var(--surface); border-radius: var(--radius-sm); padding: 14px; margin: 14px 0; }
-.ds-card {
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md);
-  padding: 16px 18px;
-}
-.ds-card-error { border-color: var(--danger); }
-.ds-card-success { border-color: var(--success); }
-.ds-status-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
-.ds-status-badge {
-  display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800;
-  text-transform: uppercase; letter-spacing: .4px; color: var(--success); background: var(--success-soft);
-  padding: 4px 10px 4px 8px; border-radius: 99px;
-}
-.ds-status-badge-success { color: var(--success); background: var(--success-soft); }
-.ds-status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; display: inline-block; }
-.ds-status-name { font-size: 14px; font-weight: 700; color: var(--theme-section-heading); }
-.ds-status-open { margin-left: auto; font-size: 12.5px; font-weight: 700; color: var(--primary); text-decoration: none; }
-.ds-status-open:hover { text-decoration: underline; }
-.ds-title { font-size: 14px; font-weight: 700; color: var(--danger); margin-bottom: 4px; }
-.ds-sub { font-size: 12.5px; color: var(--ink-soft); }
-.ds-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
-.ds-stat {
-  background: var(--bg); border-radius: var(--radius-sm); padding: 12px 10px; text-align: center;
-}
-.ds-stat-value { font-size: 22px; font-weight: 800; color: var(--primary); line-height: 1.1; }
-.ds-stat-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-top: 4px; font-weight: 700; }
-.ds-section-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
-.ds-archive-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-.ds-archive-row {
-  display: flex; align-items: center; gap: 8px; font-size: 12.5px; background: var(--bg);
-  border-radius: var(--radius-sm); padding: 8px 10px; flex-wrap: wrap;
-}
-.ds-archive-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
-.ds-archive-dot.unreachable { background: var(--danger); }
-.ds-archive-name { font-weight: 700; color: var(--ink); }
-.ds-archive-label { color: var(--muted); }
-.ds-archive-link { margin-left: auto; color: var(--primary); font-weight: 700; text-decoration: none; font-size: 12px; }
-.ds-archive-link:hover { text-decoration: underline; }
-.ds-archive-warn { color: var(--danger); font-weight: 700; font-size: 11px; text-transform: uppercase; }
-.ds-archive-empty { font-size: 12.5px; color: var(--muted); margin-bottom: 16px; }
-.ds-next-ids { display: flex; flex-wrap: wrap; gap: 10px; }
-.ds-next-id {
-  display: flex; align-items: center; gap: 6px; background: var(--primary-soft); border-radius: 99px;
-  padding: 6px 12px; font-size: 12px;
-}
-.ds-next-id-label { color: var(--ink-soft); font-weight: 600; }
-.ds-next-id-value { color: var(--primary-dark); font-weight: 800; }
-.ds-note { font-size: 12px; color: var(--muted); line-height: 1.6; margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 12px; }
 
 /* =========================================================================
    THEME TAB - color picker inputs
@@ -907,6 +892,63 @@ details > summary:hover { color: var(--primary); }
 .superadmin-gate h4 { margin: 0 0 10px; font-size: 13px; color: var(--theme-gate-title); }
 
 /* =========================================================================
+   DATABASE(S) STATUS - Admin Settings -> Shop Details -> Data Continuity.
+   One card per database (active + every archive): a colored name pill,
+   an Active/Archived badge, a capacity progress bar, row counts, and (on
+   the active database only) the Next ID predictions.
+   ========================================================================= */
+.ds-panel { background: var(--surface); border-radius: var(--radius-md); padding: 16px; }
+.ds-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.ds-panel-head h4 { margin: 0; font-size: 14px; font-weight: 800; color: var(--ink); }
+.ds-loading { font-size: 13px; color: var(--muted); padding: 10px 2px; }
+.ds-db-list { display: flex; flex-direction: column; gap: 18px; }
+.ds-db-card {
+  border-radius: var(--radius-md); padding: 18px 20px 16px; border: 1px solid var(--line);
+  background: var(--bg);
+}
+.ds-db-card.ds-db-error { color: var(--danger); font-size: 13px; }
+.ds-db-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.ds-db-name-pill {
+  display: inline-block; padding: 10px 30px; border-radius: 999px; font-size: 19px; font-weight: 800;
+  color: #fff; background: var(--brand-gradient); box-shadow: var(--shadow-sm);
+}
+.ds-db-name-pill.ds-db-pill-muted { background: linear-gradient(135deg, #9aa5a3 0%, #c3cac8 100%); }
+.ds-db-badge {
+  font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px;
+  padding: 5px 16px; border-radius: 999px;
+}
+.ds-db-badge-active { background: var(--danger-soft); color: var(--danger); }
+.ds-db-badge-archived { background: var(--line); color: var(--muted); }
+.ds-db-sheetname { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 14px; }
+.ds-db-sheetname a { font-weight: 700; }
+/* Pill-outlined, segmented capacity bar - mirrors the rough sketch rather
+   than a plain smooth gradient fill. */
+.ds-db-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.ds-db-progress-bar {
+  flex: 1; height: 20px; border-radius: 999px; border: 2px solid var(--info, #4a90d9);
+  padding: 3px; box-sizing: border-box;
+}
+.ds-db-progress-fill {
+  height: 100%; border-radius: 999px;
+  background-image: linear-gradient(90deg, var(--info, #4a90d9) 0%, var(--info, #4a90d9) 78%, transparent 78%, transparent 100%),
+                     repeating-linear-gradient(90deg, var(--info, #4a90d9) 0 16px, rgba(255,255,255,.55) 16px 19px);
+  transition: width .4s ease;
+}
+.ds-db-progress-text { font-size: 13px; font-weight: 700; color: var(--ink-soft); white-space: nowrap; }
+/* Plain two-column label:value rows - "Bills 1" / "Next Bills SJP-XXXX" -
+   not individually boxed, matching the rough sketch exactly. */
+.ds-db-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
+.ds-db-rows.ds-db-rows-single { grid-template-columns: 1fr; }
+.ds-db-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; }
+.ds-db-row-label { color: var(--ink); }
+.ds-db-row-value { color: var(--ink); font-weight: 800; }
+.ds-db-unreachable { font-size: 12.5px; color: var(--danger); }
+.ds-actions { display: flex; gap: 10px; margin-top: 16px; }
+.ds-danger-btn { color: var(--danger) !important; border-color: var(--danger) !important; }
+.ds-danger-btn:hover { background: var(--danger-soft) !important; }
+.ds-note { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 16px 0 0; }
+
+/* =========================================================================
    TOASTS / MODALS
    ========================================================================= */
 .toast-wrap { position: fixed; bottom: 20px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
@@ -928,7 +970,13 @@ details > summary:hover { color: var(--primary); }
   box-shadow: var(--shadow-lg); max-height: 88vh; overflow-y: auto;
 }
 .modal-box h3 { margin-top: 0; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.modal-box-lg { max-width: 680px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+.email-preview-frame-wrap {
+  border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden;
+  background: #eef3f6; height: 60vh; min-height: 360px;
+}
+#emailPreviewFrame { width: 100%; height: 100%; border: 0; display: block; }
 
 /* =========================================================================
    RESPONSIVE - TABLET
@@ -970,6 +1018,36 @@ details > summary:hover { color: var(--primary); }
      underneath, as many per line as comfortably fit - see the base
      .product-row flexbox rules above. */
   .product-row .autocomplete-wrap { flex-basis: 100%; }
+}
+
+/* -------------------------------------------------------------------------
+   RESPONSIVE - PHONES (professional wrap/flex pass: every multi-button row
+   and multi-field row introduced across this app - Share Bill, Database(s)
+   Status, Theme tab controls, the email preview modal - degrades to a
+   clean single column here instead of squeezing or overlapping.
+   ------------------------------------------------------------------------- */
+@media (max-width: 600px) {
+  .modal-box { padding: 18px; }
+  .modal-box-lg { max-width: 100%; }
+  .modal-actions { flex-direction: column-reverse; align-items: stretch; }
+  .modal-actions .btn { width: 100%; }
+  .email-preview-frame-wrap { height: 50vh; min-height: 280px; }
+
+  .ds-panel-head { flex-wrap: wrap; }
+  .ds-actions { flex-direction: column; }
+  .ds-actions .btn { width: 100%; }
+  .ds-db-top { align-items: flex-start; }
+  .ds-db-name-pill { font-size: 13px; padding: 7px 16px; }
+
+  .theme-row { gap: 12px; }
+  .theme-row-controls { gap: 12px; }
+  .theme-row-controls .field { flex: 1 1 100%; min-width: 0; }
+  .theme-preview-box { flex: 1 1 100%; }
+  .theme-checkbox-row { gap: 4px 12px; }
+
+  #theme_billLogoWidth, #theme_billLogoHeight { width: 100%; max-width: 100px; }
+
+  .field-label-hint { display: block; margin-top: 2px; }
 }
 
 /* -------------------------------------------------------------------------
@@ -1060,17 +1138,12 @@ details > summary:hover { color: var(--primary); }
     padding-bottom: 6px !important;
     margin: 0 !important;
   }
-  .bill-head .bill-logo {
-    width: 100px !important;
-    height: 60px !important;
-    max-width: 100px !important;
-    max-height: 60px !important;
-    object-fit: contain !important;
-  }
-  .bill-head .co-name { font-size: 16px !important; margin: 0 0 1px !important; }
-  .bill-head .co-meta { font-size: 9px !important; line-height: 1.35 !important; }
-  .bill-head .bill-tag .big { font-size: 17px !important; }
-
+  /* Logo size, and every bill font size, are intentionally NOT overridden
+     here anymore - printing (and Save-as-PDF, which is the same browser
+     print pipeline) now renders the bill at exactly the same type scale and
+     logo size as the on-screen preview and the emailed PDF, so there is one
+     single bill design everywhere it's shown, not a shrunk-down print-only
+     variant. */
   .bill-meta-grid { margin: 8px 0 !important; }
 
   .bill-table thead { display: table-header-group; }
