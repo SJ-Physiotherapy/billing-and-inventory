@@ -859,6 +859,25 @@ function setToggleState_(btnId, labelId, on) {
   if (label) label.textContent = on ? 'Shown' : 'Hidden';
 }
 
+// Shows/hides the per-bill Tax/Bank toggle rows on the Create Bill form so
+// they always match the admin's current ShowTaxOnBill/ShowBankDetails
+// settings (and, for billers, their individual access flags). Pulled out of
+// applyRoleToUI so it can also be re-run right after Admin Settings are
+// saved, without re-running the rest of applyRoleToUI's nav/role setup or
+// resetting toggles on a bill already in progress.
+function refreshBillToggleVisibility_() {
+  const taxField = document.getElementById('billTaxToggleField');
+  const bankField = document.getElementById('billBankToggleField');
+  if (!taxField || !bankField) return;
+  if (state.session.role === 'biller') {
+    taxField.style.display = (state.session.canAccessTax && state.settings.ShowTaxOnBill !== false) ? '' : 'none';
+    bankField.style.display = (state.session.canAccessBank && state.settings.ShowBankDetails !== false) ? '' : 'none';
+  } else {
+    taxField.style.display = state.settings.ShowTaxOnBill !== false ? '' : 'none';
+    bankField.style.display = state.settings.ShowBankDetails !== false ? '' : 'none';
+  }
+}
+
 function applyRoleToUI() {
   const role = state.session.role;
   const navDash = document.querySelector('.nav-item[data-view="dashboard"]');
@@ -878,8 +897,7 @@ function applyRoleToUI() {
     document.getElementById('billerLockedField').style.display = '';
     document.getElementById('billerLockedText').value = state.session.billerId + ' - ' + state.session.billerName;
 
-    document.getElementById('billTaxToggleField').style.display = (state.session.canAccessTax && state.settings.ShowTaxOnBill !== false) ? '' : 'none';
-    document.getElementById('billBankToggleField').style.display = state.session.canAccessBank ? '' : 'none';
+    refreshBillToggleVisibility_();
     document.getElementById('billDiscountToggleField').style.display = canUseDiscount_() ? '' : 'none';
 
     // Guard against a stale tab landing on a now-restricted view after reload.
@@ -903,8 +921,7 @@ function applyRoleToUI() {
     document.getElementById('billerAuthFields').style.display = 'contents';
     document.getElementById('billerLockedField').style.display = 'none';
 
-    document.getElementById('billTaxToggleField').style.display = state.settings.ShowTaxOnBill !== false ? '' : 'none';
-    document.getElementById('billBankToggleField').style.display = '';
+    refreshBillToggleVisibility_();
     document.getElementById('billDiscountToggleField').style.display = canUseDiscount_() ? '' : 'none';
   }
 
@@ -2553,8 +2570,8 @@ function renderLookupResult(bill) {
       </p>
     </div>` : '';
 
-  const canEditTax = isBillerEditor ? !!state.session.canAccessTax : true;
-  const canEditBank = isBillerEditor ? !!state.session.canAccessBank : true;
+  const canEditTax = isBillerEditor ? (!!state.session.canAccessTax && state.settings.ShowTaxOnBill !== false) : (state.settings.ShowTaxOnBill !== false);
+  const canEditBank = isBillerEditor ? (!!state.session.canAccessBank && state.settings.ShowBankDetails !== false) : (state.settings.ShowBankDetails !== false);
   const canEditDiscount = isBillerEditor ? (!!state.session.canAccessDiscount && state.settings.ShowDiscountOption !== false) : (state.settings.ShowDiscountOption !== false);
 
   const editSectionHtml = isEditable ? `
@@ -3412,7 +3429,7 @@ document.getElementById('saveInvoiceSettingsBtn').addEventListener('click', asyn
   if (r.ok) {
     toast('Invoice / Tax settings saved', 'success');
     const boot = await apiGet('getSettings');
-    if (boot.ok) { state.settings = boot.settings; applySettingsToUI(); renderPreview(); }
+    if (boot.ok) { state.settings = boot.settings; applySettingsToUI(); refreshBillToggleVisibility_(); renderPreview(); }
   } else toast(r.error, 'error');
 });
 
