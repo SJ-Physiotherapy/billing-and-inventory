@@ -98,7 +98,7 @@
       <div class="view-header">
         <div>
           <h2>Create Bill</h2>
-          <p>Fill in customer &amp; product details on the left - the bill updates live on the right.</p>
+          <p>Fill in patient &amp; treatment details on the left - the bill updates live on the right.</p>
         </div>
       </div>
 
@@ -107,10 +107,10 @@
         <div class="billing-form">
 
           <div class="panel">
-            <h3>Customer &amp; Bill Details</h3>
+            <h3>Patient &amp; Bill Details</h3>
             <div class="form-grid">
               <div class="field span-2">
-                <label>Company</label>
+                <label>Clinic</label>
                 <input id="f_company" type="text" value="SJ Physiotherapy" disabled>
               </div>
               <div class="field">
@@ -122,9 +122,9 @@
                 <input id="f_billId" type="text" disabled placeholder="Auto generated">
               </div>
               <div class="field">
-                <label>Customer Name <span style="color:var(--danger)">*</span></label>
+                <label>Patient Name <span style="color:var(--danger)">*</span></label>
                 <input id="f_customerName" type="text" placeholder="e.g. Ramesh Kumar">
-                <div class="field-error">Customer name is required</div>
+                <div class="field-error">Patient name is required</div>
               </div>
               <div class="field">
                 <label>Phone Number <span style="color:var(--danger)">*</span></label>
@@ -132,7 +132,7 @@
                 <div class="field-error">Valid phone number is required</div>
               </div>
               <div class="field">
-                <label>Customer ID</label>
+                <label>Patient ID</label>
                 <input id="f_customerId" type="text" disabled placeholder="Auto matched / created">
                 <div class="field-hint" id="custMatchHint"></div>
               </div>
@@ -188,11 +188,11 @@
           </div>
 
           <div class="panel">
-            <h3>Products / Services</h3>
+            <h3>Services / Treatments</h3>
             <div id="productRows"></div>
             <div class="add-product-bar">
-              <button id="addRowBtn" class="btn btn-outline btn-sm">+ Add Product/Service  Row</button>
-              <button id="newProductBtn" class="btn btn-outline btn-sm">+ Add New Product/Service to List</button>
+              <button id="addRowBtn" class="btn btn-outline btn-sm">+ Add Service/Treatment  Row</button>
+              <button id="newProductBtn" class="btn btn-outline btn-sm">+ Add New Service/Treatment to List</button>
             </div>
             <div class="totals-strip">
               <div class="t-item">
@@ -332,7 +332,7 @@
           <table class="biller-table inv-table">
             <thead>
               <tr>
-                <th>Product / Service</th>
+                <th>Service / Treatment </th>
                 <th>Current Stock</th>
                 <th>Low Stock Alert</th>
                 <th>Status</th>
@@ -409,8 +409,8 @@
     <section id="view-dashboard" class="view">
       <div class="view-header">
         <div>
-          <h2>Sales Dashboard</h2>
-          <p>Here is your shop's visual analysis spot to analyze values about customers, products, bills and billers... etc. </p>
+          <h2>Revenue Dashboard</h2>
+          <p>Here is your clinic's visual analysis spot to analyze values about patients, treatments, bills and billers... etc. </p>
         </div>
         <button id="refreshDashboardBtn" class="btn btn-outline btn-sm">&#128260; Refresh All</button>
       </div>
@@ -421,7 +421,7 @@
         <div class="dash-card kpi-card c-teal" data-widget="sc">
           <div class="dash-card-main">
             <div class="icon">&#128196;</div>
-            <div class="label">Total Sales (Bills)</div>
+            <div class="label">Total Invoices</div>
             <div class="value" id="kpiSalesCount">0</div>
           </div>
           <div class="chart-filter" data-key="sc"></div>
@@ -431,7 +431,7 @@
         <div class="dash-card kpi-card c-gold" data-widget="sa">
           <div class="dash-card-main">
             <div class="icon">&#8377;</div>
-            <div class="label">Total Sales (Amount)</div>
+            <div class="label">Total Revenue</div>
             <div class="value accent" id="kpiSalesAmount">&#8377;0</div>
           </div>
           <div class="chart-filter" data-key="sa"></div>
@@ -441,17 +441,17 @@
         <div class="dash-card kpi-card c-green" data-widget="qs">
           <div class="dash-card-main">
             <div class="icon">&#128230;</div>
-            <div class="label">Total Products Sold</div>
+            <div class="label">Total Treatments Provided</div>
             <div class="value" id="kpiQtySold">0</div>
           </div>
           <div class="chart-filter" data-key="qs"></div>
         </div>
 
-        <!-- Unique Customers -->
+        <!-- Unique Patients -->
         <div class="dash-card kpi-card c-violet" data-widget="uc">
           <div class="dash-card-main">
             <div class="icon">&#128101;</div>
-            <div class="label">Unique Customers</div>
+            <div class="label">Total Patients</div>
             <div class="value" id="kpiCustomers">0</div>
           </div>
           <div class="chart-filter" data-key="uc"></div>
@@ -460,7 +460,7 @@
         <!-- Product-wise Quantity Sold -->
         <div class="dash-card chart-card wide" data-widget="pc">
           <div class="dash-card-main">
-            <h4>Product/Service-wise Quantity Sold</h4>
+            <h4>Treatment-wise Revenue</h4>
             <div id="productBarChart"></div>
           </div>
           <div class="chart-filter" data-key="pc"></div>
@@ -511,9 +511,9 @@
           <div class="field span-2">
             <label>Data Source</label>
             <select id="cb_dataSource">
-              <option value="bills">Bills (whole-invoice info: biller, payment, customer, date, amount)</option>
+              <option value="bills">Bills (whole-invoice info: biller, payment, patient, date, amount)</option>
               <option value="billitems">Bill Items (individual products sold, with quantity &amp; line amount)</option>
-              <option value="customers">Customers (just a running total - see tip below)</option>
+              <option value="customers">Patients (just a running total - see tip below)</option>
               <option value="products">Products (just a running total - see tip below)</option>
             </select>
             <div id="cb_dataSourceHint" class="field-hint" style="margin-top:6px;"></div>
@@ -767,7 +767,7 @@
             <div class="field span-2">
               <label>Allow discounts to be applied to bills</label>
               <select id="s_showDiscountOption">
-                <option value="TRUE">Yes - billers with Discount access can apply per-product/service and/or whole-bill discounts</option>
+                <option value="TRUE">Yes - billers with Discount access can apply per-Service/Treatment and/or whole-bill discounts</option>
                 <option value="FALSE">No - discount option not offered to anyone</option>
               </select>
               <div class="field-hint">Also gated per-biller in the Billers table below - a biller needs BOTH this switched on AND their own Discount access toggle to use it. Discounts are off by default on every bill, entered as a % that's calculated automatically.</div>
@@ -797,7 +797,7 @@
         <div id="tab-products" class="admin-pane">
           <div class="form-grid" style="margin-bottom:12px;">
             <div class="field">
-              <label>New Product / Service Name</label>
+              <label>New Service / Treatment Name</label>
               <input id="np_name" type="text">
             </div>
             <div class="field">
@@ -809,11 +809,11 @@
               <input id="np_stock" type="number" min="0" step="1" placeholder="Leave blank = not tracked">
             </div>
           </div>
-          <button id="addProductBtnAdmin" class="btn btn-outline btn-sm">+ Add Product / Service</button>
+          <button id="addProductBtnAdmin" class="btn btn-outline btn-sm">+ Add Service / Treatment</button>
           <div class="field-hint" style="margin-top:8px;">Day-to-day stock updates happen in the <b>Inventory</b> menu - this just sets the count when a product is first created.</div>
           <div class="table-scroll" style="margin-top:14px;">
             <table class="biller-table">
-              <thead><tr><th>Product / Service</th><th>Default Price</th><th>Stock</th><th>Status</th><th></th></tr></thead>
+              <thead><tr><th>Service / Treatment</th><th>Default Price</th><th>Stock</th><th>Status</th><th></th></tr></thead>
               <tbody id="productTableBody"></tbody>
             </table>
           </div>
@@ -832,7 +832,7 @@
             </div>
             <div id="dbExpandResult" style="display:none;margin-top:12px;font-size:12.5px;color:var(--ink-soft);line-height:1.6;background:var(--bg);border-radius:var(--radius-sm);padding:10px 12px;"></div>
             <p class="ds-note">
-              Invoice, Customer and Product numbers are tracked by this app separately from the spreadsheet
+              Invoice, Patient and Product numbers are tracked by this app separately from the spreadsheet
               itself - that's deliberate, it's what lets numbering carry on smoothly across an "Add New Database"
               switch. If you ever edit a spreadsheet directly (clear rows by hand, test "Make a copy"), those
               numbers won't automatically notice - use Refresh any time something looks off, and Reset to fix it.
@@ -1115,7 +1115,7 @@
           <!-- ===== BILL / PDF DESIGN ===== -->
           <div class="theme-section">
             <h4 class="theme-section-title">Bill / PDF Design</h4>
-            <p class="field-hint" style="margin:-6px 0 12px;">One shared design for every bill, wherever it's shown - the on-screen preview, Print, Save-as-PDF, and the emailed invoice (PDF attachment + email body) all use these exact same settings, so a customer never sees two differently-styled versions of the same bill.</p>
+            <p class="field-hint" style="margin:-6px 0 12px;">One shared design for every bill, wherever it's shown - the on-screen preview, Print, Save-as-PDF, and the emailed invoice (PDF attachment + email body) all use these exact same settings, so a patient never sees two differently-styled versions of the same bill.</p>
             <div class="theme-row">
               <div class="theme-row-controls">
                 <div class="field">
@@ -1330,7 +1330,7 @@
     </div>
     <p class="field-hint" style="margin:-6px 0 12px;">You can do more than one of these, one after another - this only closes when you click Close.</p>
     <div class="field" id="shareEmailField" style="display:none;">
-      <label>Customer Email ID</label>
+      <label>Patient Email ID</label>
       <input id="share_email" type="email" placeholder="name@example.com">
       <button type="button" class="btn btn-outline btn-sm" id="shareEmailPreviewBtn" style="margin-top:10px;">&#128065;&#65039; Preview Email</button>
     </div>
@@ -1350,7 +1350,7 @@
 <div id="emailPreviewModal" class="modal-overlay">
   <div class="modal-box modal-box-lg">
     <h3>Email Preview</h3>
-    <p class="field-hint" style="margin:-6px 0 12px;">Exactly what the customer will receive - same header, footer and bill summary, before you click Send.</p>
+    <p class="field-hint" style="margin:-6px 0 12px;">Exactly what the patient will receive - same header, footer and bill summary, before you click Send.</p>
     <div class="email-preview-frame-wrap">
       <iframe id="emailPreviewFrame" title="Email preview" sandbox=""></iframe>
     </div>
@@ -1398,7 +1398,7 @@
     <div id="dbFullAdminActions" style="display:none;">
       <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:0 0 12px;">
         As Super Admin, you can fix this immediately - this creates a new database, carries your Billers,
-        Products and Customers over automatically, and archives the current (full) database as read-only.
+        Products and Patients over automatically, and archives the current (full) database as read-only.
         Enter your Super Admin username/password in Admin Settings first if you haven't already this session.
       </p>
       <button type="button" class="btn btn-primary btn-sm" id="dbFullAddNewDatabaseBtn" style="width:100%;margin-bottom:8px;">

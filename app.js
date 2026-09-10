@@ -8,7 +8,7 @@
 //    Guide: SETUP_GUIDE.md, Step 4.
 // -------------------------------------------------------------------------
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycby-uS0cwd2WSs5CsY0RobN6FsNff1d8hzSfDNEpIBo34OemZ34VQ8n5DujeCxAktT2G/exec'
+  API_URL: 'https://script.google.com/macros/s/AKfycbwUofsGxBICKgnvmt7MSN5oFcXnjhCfjWXDOHdlSQM6pxZ8FrewULzR-dmpmMM6t_Vg/exec'
 };
 
 // Bump this whenever you redeploy app.js - printed on load so you can
@@ -989,7 +989,7 @@ function addProductRow() {
   wrap.innerHTML = `
     <div class="autocomplete-wrap">
       <div class="row-label-line">
-        <span class="mini-label">Product/Service</span>
+        <span class="mini-label">Service/Treatment</span>
         <span class="row-stock-badge"></span>
       </div>
       <input type="text" class="row-product-input" placeholder="Type product name..." autocomplete="off">
@@ -1217,7 +1217,7 @@ function recalcTotals() {
 document.getElementById('f_totalDiscountPct') && document.getElementById('f_totalDiscountPct').addEventListener('input', () => { recalcTotals(); renderPreview(); });
 
 // -------------------------------------------------------------------------
-// 8. CUSTOMER AUTO-MATCH
+// 8. PATIENT AUTO-MATCH
 // -------------------------------------------------------------------------
 let custLookupTimer = null;
 ['f_phone', 'f_customerName'].forEach(id => {
@@ -1240,11 +1240,11 @@ async function tryMatchCustomer() {
       document.getElementById('f_email').value = c.email || document.getElementById('f_email').value;
       document.getElementById('f_address').value = c.address || document.getElementById('f_address').value;
       document.getElementById('f_deliveryAddress').value = c.deliveryAddress || document.getElementById('f_deliveryAddress').value;
-      hint.textContent = 'Existing customer matched and auto-filled.';
+      hint.textContent = 'Existing patient matched and auto-filled.';
       hint.style.color = 'var(--success)';
     } else {
       document.getElementById('f_customerId').value = '';
-      hint.textContent = 'New customer - a Customer ID will be created on save.';
+      hint.textContent = 'New patient - a Patient ID will be created on save.';
       hint.style.color = 'var(--muted)';
     }
     renderPreview();
@@ -1352,8 +1352,8 @@ function buildCompanyHeadHtml(s, billId) {
 function buildCustomerMetaHtml(opts) {
   const left = [];
   left.push(`<div>Date: <b>${escapeHtml(opts.date)}</b></div>`);
-  left.push(`<div>Customer: <b>${escapeHtml(opts.custName)}</b></div>`);
-  left.push(`<div>Customer ID: <b>${escapeHtml(opts.custId)}</b></div>`);
+  left.push(`<div>Patient: <b>${escapeHtml(opts.custName)}</b></div>`);
+  left.push(`<div>Patient ID: <b>${escapeHtml(opts.custId)}</b></div>`);
   left.push(`<div>Phone: <b>${escapeHtml(opts.phone)}</b></div>`);
   if (opts.email) left.push(`<div>Email: <b>${escapeHtml(opts.email)}</b></div>`);
 
@@ -1717,8 +1717,8 @@ function chartFilterTemplate_(key) {
       <span class="cf-pill">Filter By</span>
       <select class="cf-select" id="${key}_filterBy">
         <option value="">None</option>
-        <option value="customer">Customer ID</option>
-        <option value="product">Product / Service</option>
+        <option value="customer">Patient ID</option>
+        <option value="product">Service / Treatment</option>
       </select>
     </div>
     <div class="cf-row">
@@ -1777,16 +1777,16 @@ function wireChartFilter_(key) {
            <b>${escapeHtml(String(c.id))}</b> - ${escapeHtml(c.name)}${c.phone ? ' &middot; ' + escapeHtml(String(c.phone)) : ''}
          </div>`).join('');
       // Always offer a manual fallback so the filter never gets stuck -
-      // whether the customer list is still loading, genuinely empty, or
-      // simply doesn't contain what was typed (e.g. an exact Customer ID
-      // the user already knows, like "CUST-0001").
+      // whether the patient list is still loading, genuinely empty, or
+      // simply doesn't contain what was typed (e.g. an exact Patient ID
+      // the user already knows, like "PAT-0001").
       if (raw) {
         const exact = customers.some(c => String(c.id).toLowerCase() === q);
         if (!exact) {
-          html += `<div class="dropdown-item add-new" data-value="${escapeHtml(raw)}" data-label="${escapeHtml(raw)}">Use "${escapeHtml(raw)}" as Customer ID</div>`;
+          html += `<div class="dropdown-item add-new" data-value="${escapeHtml(raw)}" data-label="${escapeHtml(raw)}">Use "${escapeHtml(raw)}" as Patient ID</div>`;
         }
       }
-      if (!html) html = '<div class="dropdown-item no-match">Start typing a customer name, ID or phone…</div>';
+      if (!html) html = '<div class="dropdown-item no-match">Start typing a patient name, ID or phone…</div>';
     } else if (mode === 'product') {
       const products = state.products || [];
       const matches = !q ? products : products.filter(p => p.name.toLowerCase().includes(q));
@@ -1809,7 +1809,7 @@ function wireChartFilter_(key) {
     dropdown.classList.remove('show');
     if (byEl.value) {
       valInput.disabled = false;
-      valInput.placeholder = byEl.value === 'customer' ? 'Type customer name, ID or phone…' : 'Type product name…';
+      valInput.placeholder = byEl.value === 'customer' ? 'Type patient name, ID or phone…' : 'Type product name…';
     } else {
       valInput.disabled = true;
       valInput.placeholder = 'Select Filter By first';
@@ -2197,7 +2197,7 @@ async function handleCustomChartAction_(action, chartId) {
 }
 
 const CHART_DIMENSION_OPTIONS_ = {
-  bills: [['BillerName', 'Biller'], ['PaymentMethod', 'Payment Method'], ['PaymentStatus', 'Payment Status'], ['CustomerName', 'Customer'], ['Date', 'Date (day)'], ['Month', 'Month'], ['Year', 'Year']],
+  bills: [['BillerName', 'Biller'], ['PaymentMethod', 'Payment Method'], ['PaymentStatus', 'Payment Status'], ['CustomerName', 'Patient'], ['Date', 'Date (day)'], ['Month', 'Month'], ['Year', 'Year']],
   billitems: [['ProductName', 'Product']],
   customers: [], products: []
 };
@@ -2213,9 +2213,9 @@ const CHART_METRIC_FIELD_LABELS_ = Object.assign.apply(null, [{}].concat(
   Object.keys(CHART_METRIC_FIELD_OPTIONS_).map(k => Object.fromEntries(CHART_METRIC_FIELD_OPTIONS_[k]))
 ));
 const CHART_DATASOURCE_HINTS_ = {
-  bills: 'Best for anything about a whole sale: which biller sold it, how it was paid, which customer bought it, or when. <b>Tip:</b> for "Top 10 Customers by amount spent", pick Bills &rarr; Group By: Customer &rarr; Sum of Total Amount.',
+  bills: 'Best for anything about a whole sale: which biller sold it, how it was paid, which patient bought it, or when. <b>Tip:</b> for "Top 10 Patients by amount spent", pick Bills &rarr; Group By: Patient &rarr; Sum of Total Amount.',
   billitems: 'Best for product-level questions - which products sell the most, by quantity or by revenue. <b>Tip:</b> for "Top 10 Products Sold", pick Bill Items &rarr; Group By: Product &rarr; Sum of Quantity (or Sum of Line Total for revenue instead of quantity).',
-  customers: 'The Customers list itself only has names/contacts, not sales history - so this only supports a simple running total ("Total Customers"). For anything involving how much a customer spent or bought, use <b>Bills</b> above instead, grouped by Customer.',
+  customers: 'The Patients list itself only has names/contacts, not sales history - so this only supports a simple running total ("Total Patients"). For anything involving how much a patient spent or bought, use <b>Bills</b> above instead, grouped by Patient.',
   products: 'The Products list itself only has names/prices, not sales history - so this only supports a simple running total ("Total Products"). For anything involving how much of a product sold, use <b>Bill Items</b> above instead, grouped by Product.'
 };
 
@@ -2266,7 +2266,7 @@ function renderChartBuilderDescription_() {
   const topN = Number(document.getElementById('cb_topN').value) || 0;
   const sortDir = document.getElementById('cb_sortDir').value;
 
-  const sourceLabel = { bills: 'Bills', billitems: 'Bill Items', customers: 'Customers', products: 'Products' }[dataSource] || dataSource;
+  const sourceLabel = { bills: 'Bills', billitems: 'Bill Items', customers: 'Patients', products: 'Products' }[dataSource] || dataSource;
   const fieldLabel = CHART_METRIC_FIELD_LABELS_[metricField] || metricField;
   const dimLabel = CHART_DIMENSION_LABELS_[dimension] || dimension;
 
@@ -2390,7 +2390,7 @@ function addEditProductRow(item) {
 
   wrap.innerHTML = `
     <div>
-      <span class="mini-label">Product/Service</span>
+      <span class="mini-label">Service/Treatment</span>
       <input type="text" class="erow-name" value="${escapeHtml(item ? item.name : '')}">
     </div>
     <div>
@@ -2580,7 +2580,7 @@ function renderLookupResult(bill) {
         ${gateCredsHtml}
 
         <div class="form-grid" style="margin-top:12px;">
-          <div class="field"><label>Customer Name</label><input id="edit_customerName" type="text" value="${escapeHtml(bill.customerName || '')}"></div>
+          <div class="field"><label>Patient Name</label><input id="edit_customerName" type="text" value="${escapeHtml(bill.customerName || '')}"></div>
           <div class="field"><label>Phone Number</label><input id="edit_phone" type="tel" value="${escapeHtml(bill.phone || '')}"></div>
           <div class="field"><label>Email</label><input id="edit_email" type="email" value="${escapeHtml(bill.email || '')}"></div>
           <div class="field"><label>Payment Method</label>
@@ -2600,7 +2600,7 @@ function renderLookupResult(bill) {
               <option value="Failed" ${bill.paymentStatus === 'Failed' ? 'selected' : ''}>Failed</option>
             </select>
           </div>
-          <div class="field span-2"><label>Reason For Change <span style="color:var(--warn);">*required</span></label><input id="edit_note" type="text" placeholder="e.g. Customer requested address correction" required></div>
+          <div class="field span-2"><label>Reason For Change <span style="color:var(--warn);">*required</span></label><input id="edit_note" type="text" placeholder="e.g. Patient requested address correction" required></div>
         </div>
 
         <div class="bill-toggles-wrap" style="margin-top:14px;">
@@ -2648,14 +2648,14 @@ function renderLookupResult(bill) {
       <div class="bill-meta-grid" style="margin-bottom:14px;">
         <div>Date: <b>${escapeHtml(String(bill.date))}</b></div>
         <div>Payment: <b>${escapeHtml(bill.paymentMethod)}</b> - <b>${escapeHtml(bill.paymentStatus)}</b></div>
-        <div>Customer: <b>${escapeHtml(bill.customerName)}</b> (${escapeHtml(bill.customerId)})</div>
+        <div>Patient: <b>${escapeHtml(bill.customerName)}</b> (${escapeHtml(bill.customerId)})</div>
         <div>Phone: <b>${escapeHtml(bill.phone)}</b></div>
         <div>Billed by: <b>${escapeHtml(bill.billerName || '')}</b></div>
         <div>Total: <b>₹${Number(bill.totalAmount).toFixed(2)}</b> (Qty ${bill.totalQty})</div>
       </div>
       <div class="table-scroll">
         <table class="lookup-table" style="min-width:500px;">
-          <thead><tr><th>Product/Service</th><th>Price</th><th>Qty</th><th>Total</th></tr></thead>
+          <thead><tr><th>Service/Treatment</th><th>Price</th><th>Qty</th><th>Total</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
@@ -3069,7 +3069,7 @@ async function addNewDatabaseAutomatic_(triggerBtn) {
   if (!confirm(
     'This will:\n\n' +
     '1. Create a brand-new database (Google Spreadsheet)\n' +
-    '2. Copy your Settings, Billers, Products and Customers into it\n' +
+    '2. Copy your Settings, Billers, Products and Patients into it\n' +
     '3. Archive the current database as read-only\n' +
     '4. Switch all new billing to the new database - immediately\n\n' +
     'This cannot be easily undone once new bills are saved against the new database. Continue?'
@@ -3171,14 +3171,14 @@ function renderDbCard_(db, isActive) {
       <div class="ds-db-rows">
         <div class="ds-db-row"><span class="ds-db-row-label">Bills</span><span class="ds-db-row-value">${counts.bills}</span></div>
         <div class="ds-db-row"><span class="ds-db-row-label">Next Bills</span><span class="ds-db-row-value">${escapeHtml(db.nextBillId)}</span></div>
-        <div class="ds-db-row"><span class="ds-db-row-label">Customers</span><span class="ds-db-row-value">${counts.customers}</span></div>
-        <div class="ds-db-row"><span class="ds-db-row-label">Next Customers</span><span class="ds-db-row-value">${escapeHtml(db.nextCustomerId)}</span></div>
+        <div class="ds-db-row"><span class="ds-db-row-label">Patients</span><span class="ds-db-row-value">${counts.customers}</span></div>
+        <div class="ds-db-row"><span class="ds-db-row-label">Next Patients</span><span class="ds-db-row-value">${escapeHtml(db.nextCustomerId)}</span></div>
         <div class="ds-db-row"><span class="ds-db-row-label">Products</span><span class="ds-db-row-value">${counts.products}</span></div>
         <div class="ds-db-row"><span class="ds-db-row-label">Next Products</span><span class="ds-db-row-value">${escapeHtml(db.nextProductId)}</span></div>
       </div>` : `
       <div class="ds-db-rows ds-db-rows-single">
         <div class="ds-db-row"><span class="ds-db-row-label">Bills</span><span class="ds-db-row-value">${counts.bills}</span></div>
-        <div class="ds-db-row"><span class="ds-db-row-label">Customers</span><span class="ds-db-row-value">${counts.customers}</span></div>
+        <div class="ds-db-row"><span class="ds-db-row-label">Patients</span><span class="ds-db-row-value">${counts.customers}</span></div>
         <div class="ds-db-row"><span class="ds-db-row-label">Products</span><span class="ds-db-row-value">${counts.products}</span></div>
       </div>`;
 
@@ -3204,7 +3204,7 @@ document.getElementById('resetToActiveOnlyBtn') && document.getElementById('rese
   if (!confirm(
     'This will:\n\n' +
     '1. Forget any archive spreadsheets currently linked (they are NOT deleted - just unlinked, so Reports and Find Bill stop including them)\n' +
-    '2. Reset the next Invoice / Customer / Product numbers to match ONLY what\'s actually in THIS spreadsheet right now\n\n' +
+    '2. Reset the next Invoice / Patient / Product numbers to match ONLY what\'s actually in THIS spreadsheet right now\n\n' +
     'Use this after manually clearing rows directly in the sheet, or after testing "Add New Database" and deciding to start over. Continue?'
   )) return;
 
@@ -3804,16 +3804,28 @@ const REPORT_CONFIGS = {
       { key: 'billId',           label: 'Bill ID',            type: 'text',   visible: true },
       { key: 'invoiceDate',      label: 'Invoice Date',       type: 'date',   visible: true },
       { key: 'invoiceTime',      label: 'Invoice Time',       type: 'text',   visible: true },
-      { key: 'customerId',       label: 'Customer ID',        type: 'text',   visible: true },
-      { key: 'customerName',     label: 'Customer Name',      type: 'text',   visible: true },
+      { key: 'customerId',       label: 'Patient ID',        type: 'text',   visible: true },
+      { key: 'customerName',     label: 'Patient Name',      type: 'text',   visible: true },
       { key: 'phone',            label: 'Phone',               type: 'text',   visible: true },
       { key: 'email',            label: 'Email',               type: 'text',   visible: false },
       { key: 'address',          label: 'Address',             type: 'text',   visible: false },
       { key: 'deliveryAddress',  label: 'Delivery Address',    type: 'text',   visible: false },
-      { key: 'productName',      label: 'Product/Service',             type: 'text',   visible: true },
+      { key: 'productName',      label: 'Service/Treatment',             type: 'text',   visible: true },
       { key: 'unitPrice',        label: 'Unit Price',          type: 'number', visible: true, format: 'money', noSum: true },
       { key: 'qty',              label: 'Qty',                 type: 'number', visible: true },
-      { key: 'lineTotal',        label: 'Line Total',          type: 'number', visible: true, format: 'money' },
+      { key: 'grossAmount',      label: 'Gross Amount',        type: 'number', visible: true, format: 'money' },
+      // Discount breakdown - the item's own % discount first, then the
+      // bill-level "additional discount" % on what's left (see
+      // computeBillTotals_ on the server). The two "% " columns are rates
+      // (not money) so they're marked noSum - averaging/summing a
+      // percentage across rows isn't a meaningful number. The two "Amount"
+      // columns ARE money and unique per row, so they sum correctly with
+      // no double-counting even across a whole bill's product lines.
+      { key: 'itemDiscountPercent', label: 'Item Discount %',      type: 'number', visible: true, format: 'percent', noSum: true },
+      { key: 'itemDiscountAmount',  label: 'Item Discount Amount', type: 'number', visible: true, format: 'money' },
+      { key: 'billDiscountPercent', label: 'Bill Discount %',      type: 'number', visible: true, format: 'percent', noSum: true },
+      { key: 'billDiscountAmount',  label: 'Bill Discount Amount', type: 'number', visible: true, format: 'money' },
+      { key: 'lineTotal',        label: 'Net Line Total',      type: 'number', visible: true, format: 'money' },
       { key: 'paymentMethod',    label: 'Payment Method',      type: 'text',   visible: true, format: 'chip' },
       { key: 'paymentStatus',    label: 'Payment Status',      type: 'text',   visible: true, format: 'chip' },
       // These two repeat once per product line on the same bill (they're
@@ -3844,10 +3856,18 @@ const REPORT_CONFIGS = {
     // calendar grid.
     columns: [
       { key: 'date',          label: 'Date',            type: 'date',   visible: true },
-      { key: 'product',       label: 'Product/Service',         type: 'text',   visible: true },
+      { key: 'product',       label: 'Service/Treatment',         type: 'text',   visible: true },
       { key: 'addedToStock',  label: 'Added To Stock',  type: 'number', visible: true },
       { key: 'qtySold',       label: 'Qty Sold',        type: 'number', visible: true },
-      { key: 'revenue',       label: 'Revenue That Day',type: 'number', visible: true, format: 'money' }
+      // Gross -> Item Discount -> Bill Discount -> Net, same breakdown as
+      // the Universal Report (see computeBillTotals_ on the server). "Net
+      // Revenue" is what was ACTUALLY EARNED that day, after BOTH discount
+      // types are taken off Gross Revenue - read that column, not Gross
+      // Revenue, as "the real revenue for the day".
+      { key: 'grossRevenue',  label: 'Gross Revenue',       type: 'number', visible: true, format: 'money' },
+      { key: 'itemDiscount',  label: 'Item Discount',       type: 'number', visible: true, format: 'money' },
+      { key: 'billDiscount',  label: 'Bill Discount',       type: 'number', visible: true, format: 'money' },
+      { key: 'revenue',       label: 'Net Revenue (Actually Earned)', type: 'number', visible: true, format: 'money' }
     ]
   },
   inventoryLog: {
@@ -3858,7 +3878,7 @@ const REPORT_CONFIGS = {
       { key: 'billerId',    label: 'Biller ID',   type: 'text',   visible: true },
       { key: 'performedBy', label: 'Biller Name', type: 'text',   visible: true },
       { key: 'role',        label: 'Role',      type: 'text',   visible: false, format: 'chip' },
-      { key: 'product',     label: 'Product/Service',   type: 'text',   visible: true },
+      { key: 'product',     label: 'Service/Treatment',   type: 'text',   visible: true },
       { key: 'action',      label: 'Action',    type: 'text',   visible: true, format: 'chip' },
       { key: 'change',      label: 'Change',    type: 'number', visible: true, format: 'signed' },
       { key: 'newStock',    label: 'New Stock', type: 'number', visible: true, noSum: true },
@@ -4120,6 +4140,7 @@ function formatReportCell_(col, value) {
     return (col.type === 'number' && value === null) ? '<span class="report-na">&mdash;</span>' : '';
   }
   if (col.format === 'money') return formatMoney(value);
+  if (col.format === 'percent') return (Number(value) || 0) + '%';
   if (col.format === 'status') {
     const cls = String(value).toLowerCase() === 'active' ? 'ok' : 'out';
     return `<span class="inv-status-badge ${cls}">${escapeHtml(String(value))}</span>`;
@@ -4373,7 +4394,7 @@ function computeBillTotals(items, totalDiscountPct, taxOverride) {
  *  item actually has a discount, to keep an ordinary bill uncluttered. */
 function buildBillItemsTableHtml(totals) {
   const hasDisc = totals.itemDiscountTotal > 0.004;
-  const head = `<tr><th>Product / Service</th><th class="num">Price</th><th class="num">Qty</th>${hasDisc ? '<th class="num">Discount</th>' : ''}<th class="num">Total</th></tr>`;
+  const head = `<tr><th>Service / Treatment</th><th class="num">Price</th><th class="num">Qty</th>${hasDisc ? '<th class="num">Discount</th>' : ''}<th class="num">Total</th></tr>`;
   const body = totals.items.length
     ? totals.items.map(i => `
         <tr>
@@ -4444,7 +4465,7 @@ function buildBillTotalsAndFooterHtml(totals, totalQty, s, billerName, versionNo
       <div class="bill-foot-main">
         Billed by: <b>${escapeHtml(billerName || '-')}</b><br>
         ${versionNote ? `<span class="version-note">${escapeHtml(versionNote)}</span><br>` : ''}
-        Thank you for shopping with ${escapeHtml(s.CompanyName || 'us')}!
+        Thank you for choosing ${escapeHtml(s.CompanyName || 'us')}!
         ${bankHtml}
       </div>
       ${signHtml}
@@ -4545,7 +4566,7 @@ function buildShareMessageText(billId, d) {
   const discountBlock = discountLines.length ? `\n${discountLines.join('\n')}\nNet Amount: ₹${totals.netAmount.toFixed(2)}\n` : '';
   const taxLine = totals.tax.showTaxSection ? `Tax Total: ₹${totals.tax.taxTotal.toFixed(2)}\n` : '';
   const company = (state.settings && state.settings.CompanyName) || 'us';
-  return `Hello ${d.customerName || 'Customer'},\n\nHere is your invoice from ${company}:\n\n` +
+  return `Hello ${d.customerName || 'Patient'},\n\nHere is your invoice from ${company}:\n\n` +
     `Bill ID: ${billId}\nDate: ${d.date}\n\nItems:\n${itemLines}\n${discountBlock}${taxLine}\n` +
     `Grand Total: ₹${totals.grandTotal.toFixed(2)}\nPayment Method: ${paymentMethodLabel(d.paymentMethod)}\n\n` +
     `Thank you for your business!`;
@@ -4575,7 +4596,7 @@ document.getElementById('share_send').addEventListener('click', async () => {
         // confirmation and lost the response - but the email itself was almost certainly
         // already sent by the time this happens. Reassure rather than alarm.
         statusEl.textContent = 'This took a little longer than usual to confirm, but the email to ' +
-          email + ' has most likely already been sent. Please check with the customer before resending.';
+          email + ' has most likely already been sent. Please check with the patient before resending.';
         statusEl.className = 'biller-status ok';
       } else {
         statusEl.textContent = r.error || 'Could not send email.';
