@@ -221,7 +221,7 @@ async function bootstrapApp() {
     styleFieldLabelHints_();
     populateBillerDropdown();
     document.getElementById('f_billId').value = r.nextBillId;
-    document.getElementById('f_date').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('f_date').value = todayLocalStr_();
     addProductRow();
     loadSessionRole_();
     syncBillerPermissionsFromRoster_();
@@ -1634,7 +1634,7 @@ async function resetBillingForm() {
     }
   } catch (err) { /* keep old bill id shown if this fails */ }
 
-  document.getElementById('f_date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('f_date').value = todayLocalStr_();
   applyRoleToUI(); // also resets Tax/Bank/Discount toggles to their per-bill defaults
   addProductRow();
   recalcTotals();
