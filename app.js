@@ -1270,20 +1270,49 @@ function updatePaymentNote() {
 ['f_date', 'f_customerName', 'f_phone', 'f_email', 'f_address', 'f_deliveryAddress', 'f_paymentMethod']
   .forEach(id => document.getElementById(id).addEventListener('input', renderPreview));
 
+// Every date/time shown in this app is the shop's IST time, not whatever
+// timezone the viewing device happens to be set to. Reading the parts back
+// out through Intl with timeZone:'Asia/Kolkata' guarantees that even if a
+// laptop/phone's own clock or TZ setting is wrong (or someone opens this
+// while traveling abroad), the bill's date/time is still correctly IST -
+// this is more robust than new Date().getFullYear() etc, which silently
+// use whatever timezone the device itself claims to be in.
+function getISTParts_(d) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  }).formatToParts(d);
+  const get = t => (parts.find(p => p.type === t) || {}).value || '00';
+  return { year: get('year'), month: get('month'), day: get('day'), hour: get('hour'), minute: get('minute'), second: get('second') };
+}
+
 function formatBillDate(val) {
   if (!val) return '-';
   const str = String(val);
   // Already YYYY-MM-DD from date input
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-  // ISO / Sheet datetime → local calendar date
+  // ISO / Sheet datetime → IST calendar date (not the device's local date)
   const d = new Date(str);
   if (!isNaN(d.getTime())) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return y + '-' + m + '-' + day;
+    const p = getISTParts_(d);
+    return `${p.year}-${p.month}-${p.day}`;
   }
   return str;
+}
+
+// Exact IST date + time, e.g. "13 Sep 2026, 06:45 PM IST" - used for real
+// event timestamps (bill created/edited) where the time itself matters,
+// as opposed to formatBillDate() above which is only ever a calendar date.
+const IST_MONTH_NAMES_ = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function formatISTDateTime_(val) {
+  if (!val) return '-';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return String(val);
+  const p = getISTParts_(d);
+  let h = Number(p.hour);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return `${Number(p.day)} ${IST_MONTH_NAMES_[Number(p.month) - 1]} ${p.year}, ${String(h).padStart(2, '0')}:${p.minute} ${ampm} IST`;
 }
 
 function paymentMethodLabel(method) {
@@ -1706,9 +1735,8 @@ const DASH_WIDGET_KEYS = ['sc', 'sa', 'qs', 'uc', 'pc', 'bb', 'pm'];
 document.getElementById('refreshDashboardBtn').addEventListener('click', loadDashboard);
 
 function todayLocalStr_() {
-  const d = new Date();
-  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  const p = getISTParts_(new Date());
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
 function chartFilterTemplate_(key) {
@@ -2646,12 +2674,14 @@ function renderLookupResult(bill) {
     <div class="panel">
       <h3>Bill ${escapeHtml(bill.billId)} ${bill.versionNote ? '<span style="color:var(--warn);font-weight:600;font-size:11px;">(edited)</span>' : ''}${!isEditable ? ' <span class="report-chip">' + escapeHtml(bill.source || 'Archived') + '</span>' : ''}</h3>
       <div class="bill-meta-grid" style="margin-bottom:14px;">
-        <div>Date: <b>${escapeHtml(String(bill.date))}</b></div>
+        <div>Date: <b>${escapeHtml(formatBillDate(bill.date))}</b></div>
         <div>Payment: <b>${escapeHtml(bill.paymentMethod)}</b> - <b>${escapeHtml(bill.paymentStatus)}</b></div>
         <div>Patient: <b>${escapeHtml(bill.customerName)}</b> (${escapeHtml(bill.customerId)})</div>
         <div>Phone: <b>${escapeHtml(bill.phone)}</b></div>
         <div>Billed by: <b>${escapeHtml(bill.billerName || '')}</b></div>
         <div>Total: <b>₹${Number(bill.totalAmount).toFixed(2)}</b> (Qty ${bill.totalQty})</div>
+        <div>Created: <b>${escapeHtml(formatISTDateTime_(bill.createdAt))}</b></div>
+        ${bill.updatedBy ? `<div>Last Edited: <b>${escapeHtml(formatISTDateTime_(bill.updatedAt))}</b> by <b>${escapeHtml(bill.updatedBy)}</b></div>` : ''}
       </div>
       <div class="table-scroll">
         <table class="lookup-table" style="min-width:500px;">
