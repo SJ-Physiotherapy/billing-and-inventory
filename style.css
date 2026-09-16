@@ -1,6 +1,6 @@
 /* =========================================================================
-   KOVAI LAKSHMI GRINDERS - BILLING SYSTEM
-   Design tokens
+   SJ PHYSIOTHERAPY - BILLING SYSTEM
+   
    ========================================================================= */
 :root {
   /* Theme customization tokens - JS (applyTheme_ in app.js) sets these
@@ -1293,7 +1293,7 @@ details > summary:hover { color: var(--primary); }
 }
 
 /* ---- Editable body : placeholder + page-break guides ---- */
-.lp-body-wrap { position: relative; flex: 1 1 auto; }
+.lp-body-wrap { position: relative; flex: 1 1 auto; width: 100%; }
 .lp-body { position: relative; z-index: 1; }
 .lp-body:focus { outline: none; }
 .lp-body.lp-is-empty::before {

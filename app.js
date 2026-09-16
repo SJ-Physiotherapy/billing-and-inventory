@@ -4783,6 +4783,7 @@ const LP_PAPER_CSS = `
   border-top: 0.3mm solid rgba(255,255,255,0.45);
 }
 .lp-body {
+  width: ${LP_PAGE.widthMm}mm;
   min-height: ${LP_PAGE.contentMm}mm;
   box-sizing: border-box;
   padding: ${LP_PAGE.padTopMm}mm ${LP_PAGE.padSideMm}mm ${LP_PAGE.padBottomMm}mm ${LP_PAGE.padSideMm}mm;
