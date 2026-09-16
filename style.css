@@ -1323,7 +1323,18 @@ details > summary:hover { color: var(--primary); }
 @media (max-width: 720px) {
   .lp-toolbar { position: static; }
   .lp-stage { padding: 12px; }
-  .lp-tb-group-right { margin-left: 0; }
+  /* This group (zoom select + Reset + Print/Save) is a flex row with no
+     wrap of its own. On a phone it doesn't fit on one line and was never
+     told it's allowed to break - it just bled off the right edge of the
+     screen instead of folding onto a second line like every other toolbar
+     group already does. Giving it a real width (so the browser knows how
+     much room it actually has) plus its own wrap fixes that, with no
+     effect at desktop widths where it fits on one line anyway. */
+  .lp-tb-group-right {
+    margin-left: 0;
+    width: 100%;
+    flex-wrap: wrap;
+  }
 }
 
 /* The on-screen letterpad is never what gets printed - printing goes through
