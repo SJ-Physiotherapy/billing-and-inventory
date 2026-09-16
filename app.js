@@ -4742,6 +4742,16 @@ const LP_PAPER_CSS = `
   box-sizing: border-box;
   color: #222222;
   font-family: Georgia, 'Times New Roman', Times, serif;
+  /* Mobile Safari/Chrome silently boost the font size of text sitting
+     inside a wide box that's viewed through a narrower, horizontally-
+     scrolling viewport ("text autosizing") - the sheet here is exactly
+     that shape. That inflation is invisible (no layout property changes),
+     it just makes each character wider, so lines wrap earlier and the
+     text never reaches the sheet's true right-hand edge. Turning it off
+     keeps the on-screen font size exactly what lp-body specifies, on
+     every device, so wrapping matches the real printed width. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 .lp-band { flex: 0 0 auto; box-sizing: border-box; overflow: hidden; }
 .lp-band-head {
@@ -4783,6 +4793,8 @@ const LP_PAPER_CSS = `
   outline: none;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 .lp-body p { margin: 0 0 8px 0; }
 .lp-body h1 { font-size: 20pt; margin: 0 0 10px; }
@@ -5440,7 +5452,18 @@ function lpPrint_() {
   const frame = document.createElement('iframe');
   frame.id = 'lpPrintFrame';
   frame.setAttribute('aria-hidden', 'true');
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+  // Was a 0x0, visibility:hidden iframe. Desktop browsers happily print a
+  // hidden/zero-size iframe's document at its own real size regardless -
+  // but mobile Chrome/Safari's print pipeline only outputs what the iframe
+  // element itself is actually laid out and painted as on screen, so a 0x0
+  // or visibility:hidden frame prints as a blank page there (this is the
+  // "downloads only a white sheet" bug on phones). Giving it real A4
+  // dimensions and hiding it purely by pushing it off-canvas - never
+  // visibility:hidden, never display:none - keeps it invisible to the user
+  // while giving every browser, mobile included, real content to render.
+  frame.style.cssText =
+    'position:fixed;top:0;left:-99999px;width:' + LP_PAGE.widthMm + 'mm;' +
+    'height:' + LP_PAGE.heightMm + 'mm;border:0;';
   document.body.appendChild(frame);
 
   const fdoc = frame.contentWindow.document;
