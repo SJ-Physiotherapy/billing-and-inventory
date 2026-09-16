@@ -40,7 +40,7 @@ const SHEET = {
 // to prove whether a NEW DEPLOYMENT actually picked up your latest code
 // (saving the file alone does NOT update the live /exec URL - see
 // Deploy > Manage deployments > pencil icon > Version: New version > Deploy).
-const BACKEND_BUILD = 'SJP-2026-09-08-01-FIX';
+const BACKEND_BUILD = 'SJP-2026-09-16-01-LETTERPAD';
 
 // ---------------------------------------------------------------------------
 // 0b. SCHEMA MIGRATIONS - runs automatically on every request (cheap
@@ -49,7 +49,7 @@ const BACKEND_BUILD = 'SJP-2026-09-08-01-FIX';
 //     setupDatabase() by hand. Never destructive - only appends columns
 //     and sheets that are missing.
 // ---------------------------------------------------------------------------
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 // Theme customization - Super Admin only, applied live across the whole
 // app (sidebar, buttons, charts, bill header). Stored as plain Settings
@@ -290,6 +290,21 @@ function migrateSchema_() {
         if (billersSh.getLastRow() > 1) billersSh.getRange(2, col, billersSh.getLastRow() - 1, 1).setValue(false);
       }
     });
+  }
+
+  // --- Billers: add CanAccessLetterpad column if missing - gates the new
+  //     Letterpad menu only. The Letterpad itself never reads or writes ANY
+  //     sheet: it is a purely in-browser typing/print surface, so this one
+  //     column is the entire database footprint of that feature. Same
+  //     "off by default, admin opts a biller in" pattern as every other
+  //     access flag above. ---
+  if (billersSh && billersSh.getLastColumn() > 0) {
+    const headers = billersSh.getRange(1, 1, 1, billersSh.getLastColumn()).getValues()[0];
+    if (headers.indexOf('CanAccessLetterpad') === -1) {
+      const col = billersSh.getLastColumn() + 1;
+      billersSh.getRange(1, col).setValue('CanAccessLetterpad').setFontWeight('bold').setBackground('#E1341E').setFontColor('#FFFFFF');
+      if (billersSh.getLastRow() > 1) billersSh.getRange(2, col, billersSh.getLastRow() - 1, 1).setValue(false);
+    }
   }
 
   // --- Bills: add DiscountPercent column (the bill-level "additional
@@ -1037,7 +1052,7 @@ function apiLogin(p) {
   const sh = ss_().getSheetByName(SHEET.BILLERS);
   const data = sh.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    const [id, name, bpass, active, , canTax, canBank, canFindEdit, canStockView, canStockEdit, canReportDownload, canDiscount, canDashboard] = data[i];
+    const [id, name, bpass, active, , canTax, canBank, canFindEdit, canStockView, canStockEdit, canReportDownload, canDiscount, canDashboard, canLetterpad] = data[i];
     if (!id) continue;
     if (String(id) === uname && String(bpass) === pwd) {
       const isActive = active === true || String(active).toUpperCase() === 'TRUE';
@@ -1053,7 +1068,8 @@ function apiLogin(p) {
         canAccessStockEdit: canStockEdit === true || String(canStockEdit).toUpperCase() === 'TRUE',
         canAccessReportDownload: canReportDownload === true || String(canReportDownload).toUpperCase() === 'TRUE',
         canAccessDiscount: canDiscount === true || String(canDiscount).toUpperCase() === 'TRUE',
-        canAccessDashboard: canDashboard === true || String(canDashboard).toUpperCase() === 'TRUE'
+        canAccessDashboard: canDashboard === true || String(canDashboard).toUpperCase() === 'TRUE',
+        canAccessLetterpad: canLetterpad === true || String(canLetterpad).toUpperCase() === 'TRUE'
       };
     }
   }
@@ -1422,7 +1438,7 @@ function apiGetBillers() {
   const data = sh.getDataRange().getValues();
   const billers = [];
   for (let i = 1; i < data.length; i++) {
-    const [id, name, pass, active, , canTax, canBank, canFindEdit, canStockView, canStockEdit, canReportDownload, canDiscount, canDashboard] = data[i];
+    const [id, name, pass, active, , canTax, canBank, canFindEdit, canStockView, canStockEdit, canReportDownload, canDiscount, canDashboard, canLetterpad] = data[i];
     if (!id) continue;
     billers.push({
       billerId: id, name: name,
@@ -1434,7 +1450,8 @@ function apiGetBillers() {
       canAccessStockEdit: canStockEdit === true || String(canStockEdit).toUpperCase() === 'TRUE',
       canAccessReportDownload: canReportDownload === true || String(canReportDownload).toUpperCase() === 'TRUE',
       canAccessDiscount: canDiscount === true || String(canDiscount).toUpperCase() === 'TRUE',
-      canAccessDashboard: canDashboard === true || String(canDashboard).toUpperCase() === 'TRUE'
+      canAccessDashboard: canDashboard === true || String(canDashboard).toUpperCase() === 'TRUE',
+      canAccessLetterpad: canLetterpad === true || String(canLetterpad).toUpperCase() === 'TRUE'
     });
   }
   return { ok: true, billers: billers };
@@ -1477,14 +1494,14 @@ function apiToggleBiller(p) {
 
 // field must be one of: canAccessTax, canAccessBank, canAccessFindEdit,
 // canAccessStockView, canAccessStockEdit, canAccessReportDownload,
-// canAccessDiscount, canAccessDashboard
+// canAccessDiscount, canAccessDashboard, canAccessLetterpad
 function apiSetBillerAccess(p) {
   const auth = requireSuperAdmin_(p.superAdminUser, p.superAdminPass);
   if (!auth.ok) return auth;
   const colMap = {
     canAccessTax: 6, canAccessBank: 7, canAccessFindEdit: 8,
     canAccessStockView: 9, canAccessStockEdit: 10, canAccessReportDownload: 11,
-    canAccessDiscount: 12, canAccessDashboard: 13
+    canAccessDiscount: 12, canAccessDashboard: 13, canAccessLetterpad: 14
   };
   const col = colMap[p.field];
   if (!col) return { ok: false, error: 'Unknown permission field' };
@@ -3458,7 +3475,7 @@ function provisionSchemaOnSpreadsheet_(ssRef) {
     'BillerID', 'Name', 'Password', 'Active', 'CreatedAt',
     'CanAccessTax', 'CanAccessBank', 'CanAccessFindEdit',
     'CanAccessStockView', 'CanAccessStockEdit', 'CanAccessReportDownload',
-    'CanAccessDiscount', 'CanAccessDashboard'
+    'CanAccessDiscount', 'CanAccessDashboard', 'CanAccessLetterpad'
   ]);
   createSheetIfMissing_(ssRef, SHEET.CUSTOMERS, ['CustomerID', 'Patient Name', 'Phone', 'Email', 'Address', 'DeliveryAddress', 'CreatedAt']);
   createSheetIfMissing_(ssRef, SHEET.PRODUCTS, ['ProductID', 'TreatmentName', 'DefaultPrice', 'Active', 'CreatedAt', 'Stock', 'LowStockThreshold']);
@@ -3526,7 +3543,7 @@ function setupDatabase() {
 
   const billersSh = ssRef.getSheetByName(SHEET.BILLERS);
   if (billersSh.getLastRow() < 2) {
-    billersSh.appendRow(['B001', 'SJ Physiotherapy', 'SJ12345', true, new Date(), true, true, true, true, true, true, true, true]);
+    billersSh.appendRow(['B001', 'SJ Physiotherapy', 'SJ12345', true, new Date(), true, true, true, true, true, true, true, true, true]);
   }
 
   const productsSh = ssRef.getSheetByName(SHEET.PRODUCTS);

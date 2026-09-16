@@ -1160,3 +1160,175 @@ details > summary:hover { color: var(--primary); }
     }
   }
 }
+
+/* =========================================================================
+   LETTERPAD  (new, additive only)
+
+   Everything here is namespaced under .lp-* and #lp* and is used ONLY by
+   the Letterpad view - no existing selector is modified or overridden.
+
+   NOTE: the A4 sheet itself (.lp-sheet / .lp-band / .lp-body / .lp-foot-*)
+   is deliberately NOT styled here. That CSS lives in LP_PAPER_CSS in app.js
+   and is injected at runtime, because the exact same stylesheet text is also
+   written into the print iframe - keeping "what you see" and "what you
+   print" as one single source of truth instead of two copies that can drift.
+   ========================================================================= */
+
+/* ---- "nothing is saved" warning strip ---- */
+.lp-warning-strip {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: #ff7676; border: 1px solid #f08c8c; border-left: 4px solid #e00000;
+  color: #ffffff; border-radius: var(--radius-md);
+  padding: 11px 14px; margin-bottom: 14px;
+  font-size: 12.5px; line-height: 1.55;
+}
+.lp-warning-icon { flex: 0 0 auto; font-size: 14px; line-height: 1.4; }
+
+/* ---- Toolbar ---- */
+.lp-toolbar {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 10px 12px 8px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.06));
+  position: sticky; top: 0; z-index: 20;
+}
+.lp-tb-row {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 8px; padding: 3px 0;
+}
+.lp-tb-row + .lp-tb-row { border-top: 1px dashed var(--line); margin-top: 3px; padding-top: 7px; }
+.lp-tb-group {
+  display: flex; align-items: center; gap: 4px;
+  padding-right: 8px; border-right: 1px solid var(--line);
+}
+.lp-tb-group:last-child { border-right: 0; padding-right: 0; }
+.lp-tb-group-right { margin-left: auto; border-right: 0; padding-right: 0; gap: 8px; }
+
+.lp-tb-btn {
+  min-width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 0 7px;
+  font-size: 13px; font-family: inherit; line-height: 1;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid transparent; border-radius: 6px;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease;
+}
+.lp-tb-btn:hover { background: var(--theme-outline-hover-bg, rgba(0,0,0,.06)); border-color: var(--line); }
+.lp-tb-btn.is-active { background: var(--brand-gradient); color: var(--theme-button-text); border-color: transparent; }
+.lp-tb-btn.lp-tb-wide { min-width: auto; font-size: 12px; }
+
+.lp-tb-select {
+  height: 32px; padding: 0 6px;
+  font-size: 12.5px; font-family: inherit; color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px;
+  cursor: pointer;
+}
+.lp-tb-select:focus { outline: 2px solid var(--theme-outline-border, #2778b7); outline-offset: -1px; }
+
+.lp-tb-inline-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; color: var(--ink-soft); cursor: pointer; white-space: nowrap;
+}
+.lp-tb-inline-label input { cursor: pointer; }
+
+/* Colour pickers - the native swatch is hidden behind a styled tile */
+.lp-tb-color { position: relative; display: inline-flex; cursor: pointer; }
+.lp-tb-color input[type="color"] {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; border: 0; padding: 0;
+}
+.lp-tb-color-swatch {
+  width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 6px;
+  font-size: 12px; font-weight: 700; color: #fff;
+  text-shadow: 0 0 2px rgba(0,0,0,.55);
+  pointer-events: none;
+}
+
+/* Little alignment glyphs drawn in CSS so no icon font is needed */
+.lp-al { display: inline-block; width: 14px; height: 10px; position: relative; }
+.lp-al::before, .lp-al::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 2px;
+  background: currentColor; border-radius: 1px;
+}
+.lp-al::before { top: 1px; }
+.lp-al::after { bottom: 1px; }
+.lp-al-l { box-shadow: inset 0 0 0 0 transparent; }
+.lp-al-l::after { right: 4px; }
+.lp-al-c::after { left: 3px; right: 3px; }
+.lp-al-r::after { left: 4px; }
+.lp-al-j::after { left: 0; right: 0; }
+
+.lp-tb-status {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 7px; padding-top: 6px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px; color: var(--ink-soft);
+}
+.lp-tb-status-dot { opacity: .5; }
+
+/* ---- Stage : the grey desk the A4 sheet sits on ----
+   overflow-x lives HERE rather than on the page, because html/body already
+   carry overflow-x:hidden app-wide. The sheet is a fixed 210mm and must be
+   allowed to scroll sideways on a narrow screen rather than be squeezed -
+   squeezing it would make the on-screen layout a lie about what prints. */
+.lp-stage {
+  background: #5a6570;
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+.lp-zoom { width: max-content; margin: 0 auto; }
+.lp-stage .lp-sheet {
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  margin: 0 auto;
+}
+
+/* ---- Editable body : placeholder + page-break guides ---- */
+.lp-body-wrap { position: relative; flex: 1 1 auto; }
+.lp-body { position: relative; z-index: 1; }
+.lp-body:focus { outline: none; }
+.lp-body.lp-is-empty::before {
+  content: attr(data-lp-placeholder);
+  position: absolute;
+  top: 8mm; left: 16mm;
+  color: #a9b0b6;
+  pointer-events: none;
+}
+
+.lp-guides { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.lp-guide {
+  position: absolute; left: 0; right: 0;
+  border-top: 1px dashed #c23b3b;
+}
+.lp-guide span {
+  position: absolute; right: 4mm; top: -9px;
+  background: #c23b3b; color: #fff;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 8px; line-height: 1;
+  padding: 3px 6px; border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* On a phone the toolbar stops sticking - a sticky 3-row toolbar would eat
+   most of the screen. Nothing about the SHEET changes at any width. */
+@media (max-width: 720px) {
+  .lp-toolbar { position: static; }
+  .lp-stage { padding: 12px; }
+  .lp-tb-group-right { margin-left: 0; }
+}
+
+/* The on-screen letterpad is never what gets printed - printing goes through
+   its own iframe (see lpPrint_ in app.js). This just makes sure a stray
+   Ctrl+P can't drop a half-rendered sheet into the app's own print output. */
+@media print {
+  #view-letterpad { display: none !important; }
+}

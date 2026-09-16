@@ -14,8 +14,8 @@ const CONFIG = {
 // Bump this whenever you redeploy app.js - printed on load so you can
 // confirm in the browser console (F12) that the page is actually running
 // the file you think it's running, not a cached older copy.
-const FRONTEND_BUILD = 'SJP-2026-09-07-29-THEMEV4';
-const EXPECTED_BACKEND_BUILD = 'SJP-2026-09-08-01-FIX'; // must match BACKEND_BUILD in Code.gs
+const FRONTEND_BUILD = 'SJP-2026-09-16-31-LETTERPAD-PRINTFIX';
+const EXPECTED_BACKEND_BUILD = 'SJP-2026-09-16-01-LETTERPAD'; // must match BACKEND_BUILD in Code.gs
 console.log('SJP billing app.js build', FRONTEND_BUILD);
 
 // Shows a impossible-to-miss banner at the top of the app the moment we can
@@ -60,7 +60,7 @@ const state = {
   lastSavedBill: null,
   customCharts: [],
   themeChartPalette: ['#E1341E', '#a8d339', '#AE2314', '#F2A65A', '#8C2F39', '#4B5A57', '#2E86AB', '#6C4FB6', '#1F9E78', '#D4A017', '#7A5C61', '#3D5A80'],
-  session: { role: null, billerId: '', billerName: '', billerPassword: '', canAccessTax: false, canAccessBank: false, canAccessFindEdit: false, canAccessStockView: false, canAccessStockEdit: false, canAccessReportDownload: false }
+  session: { role: null, billerId: '', billerName: '', billerPassword: '', canAccessTax: false, canAccessBank: false, canAccessFindEdit: false, canAccessStockView: false, canAccessStockEdit: false, canAccessReportDownload: false, canAccessLetterpad: false }
 };
 
 // -------------------------------------------------------------------------
@@ -93,7 +93,7 @@ const SESSION_STORAGE_KEYS = [
   'SJP_billerId', 'SJP_billerName', 'SJP_billerPass',
   'SJP_canAccessTax', 'SJP_canAccessBank', 'SJP_canAccessFindEdit',
   'SJP_canAccessStockView', 'SJP_canAccessStockEdit', 'SJP_canAccessReportDownload',
-  'SJP_canAccessDiscount', 'SJP_canAccessDashboard'
+  'SJP_canAccessDiscount', 'SJP_canAccessDashboard', 'SJP_canAccessLetterpad'
 ];
 
 // The server marks any auth failure caused by a missing/expired session
@@ -159,6 +159,7 @@ async function doLogin() {
         sessionStorage.setItem('SJP_canAccessReportDownload', r.canAccessReportDownload ? '1' : '0');
         sessionStorage.setItem('SJP_canAccessDiscount', r.canAccessDiscount ? '1' : '0');
         sessionStorage.setItem('SJP_canAccessDashboard', r.canAccessDashboard ? '1' : '0');
+        sessionStorage.setItem('SJP_canAccessLetterpad', r.canAccessLetterpad ? '1' : '0');
       }
       document.getElementById('whoAmI').textContent = r.displayName || username;
       document.getElementById('loginScreen').classList.add('hidden');
@@ -196,6 +197,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     if (btn.dataset.view === 'reports') loadReport(reportState.active);
     if (btn.dataset.view === 'admin') checkSpreadsheetCapacity_();
     if (btn.dataset.view === 'billing') checkBillingCapacityGate_();
+    if (btn.dataset.view === 'letterpad') initLetterpad_();
   });
 });
 document.getElementById('hamburgerBtn').addEventListener('click', () => {
@@ -783,6 +785,7 @@ function loadSessionRole_() {
     state.session.canAccessReportDownload = sessionStorage.getItem('SJP_canAccessReportDownload') === '1';
     state.session.canAccessDiscount = sessionStorage.getItem('SJP_canAccessDiscount') === '1';
     state.session.canAccessDashboard = sessionStorage.getItem('SJP_canAccessDashboard') === '1';
+    state.session.canAccessLetterpad = sessionStorage.getItem('SJP_canAccessLetterpad') === '1';
   }
 }
 
@@ -808,6 +811,7 @@ function syncBillerPermissionsFromRoster_() {
   state.session.canAccessReportDownload = !!me.canAccessReportDownload;
   state.session.canAccessDiscount = !!me.canAccessDiscount;
   state.session.canAccessDashboard = !!me.canAccessDashboard;
+  state.session.canAccessLetterpad = !!me.canAccessLetterpad;
   sessionStorage.setItem('SJP_canAccessTax', state.session.canAccessTax ? '1' : '0');
   sessionStorage.setItem('SJP_canAccessBank', state.session.canAccessBank ? '1' : '0');
   sessionStorage.setItem('SJP_canAccessFindEdit', state.session.canAccessFindEdit ? '1' : '0');
@@ -816,6 +820,7 @@ function syncBillerPermissionsFromRoster_() {
   sessionStorage.setItem('SJP_canAccessReportDownload', state.session.canAccessReportDownload ? '1' : '0');
   sessionStorage.setItem('SJP_canAccessDiscount', state.session.canAccessDiscount ? '1' : '0');
   sessionStorage.setItem('SJP_canAccessDashboard', state.session.canAccessDashboard ? '1' : '0');
+  sessionStorage.setItem('SJP_canAccessLetterpad', state.session.canAccessLetterpad ? '1' : '0');
 }
 
 // True if the signed-in user is allowed to see the Inventory menu at all
@@ -840,6 +845,15 @@ function canDownloadReports_() {
 function canSeeDashboardMenu_() {
   if (state.session.role !== 'biller') return true;
   return !!state.session.canAccessDashboard;
+}
+// True if the signed-in user is allowed to see the Letterpad menu. Super
+// Admin always can; a biller needs their own Letterpad toggle. Nothing on
+// the Letterpad is ever sent to the server, so unlike Tax/Bank/Discount
+// there is no second, server-side enforcement to mirror this - hiding the
+// menu IS the whole permission.
+function canSeeLetterpadMenu_() {
+  if (state.session.role !== 'biller') return true;
+  return !!state.session.canAccessLetterpad;
 }
 // True if discounts can be used at all right now - needs BOTH the admin's
 // master "Show Discount Option" switch in Settings AND this specific
@@ -884,6 +898,7 @@ function applyRoleToUI() {
   const navLookup = document.querySelector('.nav-item[data-view="lookup"]');
   const navAdmin = document.querySelector('.nav-item[data-view="admin"]');
   const navInventory = document.querySelector('.nav-item[data-view="inventory"]');
+  const navLetterpad = document.querySelector('.nav-item[data-view="letterpad"]');
   const reportDownloadBtn = document.getElementById('reportDownloadBtn');
   if (reportDownloadBtn) reportDownloadBtn.style.display = canDownloadReports_() ? '' : 'none';
 
@@ -892,6 +907,7 @@ function applyRoleToUI() {
     if (navAdmin) navAdmin.style.display = 'none';
     if (navLookup) navLookup.style.display = state.session.canAccessFindEdit ? '' : 'none';
     if (navInventory) navInventory.style.display = canSeeInventoryMenu_() ? '' : 'none';
+    if (navLetterpad) navLetterpad.style.display = canSeeLetterpadMenu_() ? '' : 'none';
 
     document.getElementById('billerAuthFields').style.display = 'none';
     document.getElementById('billerLockedField').style.display = '';
@@ -905,7 +921,8 @@ function applyRoleToUI() {
     const activeView = activeBtn ? activeBtn.dataset.view : 'billing';
     const blocked = (activeView === 'dashboard' && !canSeeDashboardMenu_()) || activeView === 'admin' ||
       (activeView === 'lookup' && !state.session.canAccessFindEdit) ||
-      (activeView === 'inventory' && !canSeeInventoryMenu_());
+      (activeView === 'inventory' && !canSeeInventoryMenu_()) ||
+      (activeView === 'letterpad' && !canSeeLetterpadMenu_());
     if (blocked) {
       document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
       document.querySelector('.nav-item[data-view="billing"]').classList.add('active');
@@ -917,6 +934,7 @@ function applyRoleToUI() {
     if (navAdmin) navAdmin.style.display = '';
     if (navLookup) navLookup.style.display = '';
     if (navInventory) navInventory.style.display = '';
+    if (navLetterpad) navLetterpad.style.display = '';
 
     document.getElementById('billerAuthFields').style.display = 'contents';
     document.getElementById('billerLockedField').style.display = 'none';
@@ -3275,6 +3293,7 @@ function renderBillerTable() {
       <td><button class="toggle ${b.canAccessStockView ? 'on' : ''}" data-id="${b.billerId}" data-action="access" data-field="canAccessStockView" title="Can view the Inventory menu"></button></td>
       <td><button class="toggle ${b.canAccessStockEdit ? 'on' : ''}" data-id="${b.billerId}" data-action="access" data-field="canAccessStockEdit" title="Can add / edit stock quantities"></button></td>
       <td><button class="toggle ${b.canAccessReportDownload ? 'on' : ''}" data-id="${b.billerId}" data-action="access" data-field="canAccessReportDownload" title="Can download Reports as Excel"></button></td>
+      <td><button class="toggle ${b.canAccessLetterpad ? 'on' : ''}" data-id="${b.billerId}" data-action="access" data-field="canAccessLetterpad" title="Can open the Letterpad menu (type + print only, nothing is saved)"></button></td>
       <td class="row-actions">
         <button class="icon-btn icon-btn-edit" data-id="${b.billerId}" data-action="edit" title="Edit ${escapeHtml(b.name)}" aria-label="Edit">&#9998;</button>
         <button class="icon-btn icon-btn-danger" data-id="${b.billerId}" data-action="delete" title="Delete ${escapeHtml(b.name)}" aria-label="Delete">&#128465;</button>
@@ -3501,7 +3520,7 @@ document.getElementById('saveAccountBtn').addEventListener('click', async () => 
       ['SJP_user', 'SJP_displayName', 'SJP_role', 'SJP_billerId', 'SJP_billerName', 'SJP_billerPass',
        'SJP_canAccessTax', 'SJP_canAccessBank', 'SJP_canAccessFindEdit',
        'SJP_canAccessStockView', 'SJP_canAccessStockEdit', 'SJP_canAccessReportDownload',
-   'SJP_canAccessDiscount', 'SJP_canAccessDashboard'].forEach(k => sessionStorage.removeItem(k));
+   'SJP_canAccessDiscount', 'SJP_canAccessDashboard', 'SJP_canAccessLetterpad'].forEach(k => sessionStorage.removeItem(k));
       setTimeout(() => location.reload(), 1200);
     } else {
       statusEl.textContent = r.error || 'Could not update login.';
@@ -4674,3 +4693,801 @@ document.getElementById('share_send').addEventListener('click', async () => {
     bootstrapApp();
   }
 })();
+
+// =========================================================================
+// 19. LETTERPAD  (type -> print / Save as PDF ; NOTHING is ever saved)
+//
+// This whole section is deliberately self-contained and read-only towards
+// the rest of the app:
+//   - it never calls apiGet / apiPost, so it can never touch the database;
+//   - it never writes to sessionStorage / localStorage, so nothing survives
+//     a reload (that is the explicitly requested behaviour);
+//   - it prints through its OWN hidden iframe with its own stylesheet, so
+//     the existing bill/lookup print pipeline (body[data-print-target] in
+//     style.css, and the global @page margins there) is left completely
+//     untouched.
+//
+// The A4 sheet is sized in real millimetres and is intentionally NOT
+// responsive - what is on screen is exactly what comes out of the printer.
+// =========================================================================
+
+// --- Real-world page geometry. Everything below is derived from these, and
+//     the SAME numbers are used on screen and in the print document, so the
+//     two can never drift apart. ---
+const LP_PAGE = {
+  widthMm: 210,      // A4 width
+  heightMm: 297,     // A4 height
+  headMm: 32,        // predefined letterhead band
+  footMm: 44,        // predefined address / contact band
+  padTopMm: 8,
+  padSideMm: 16,
+  padBottomMm: 6
+};
+LP_PAGE.contentMm = LP_PAGE.heightMm - LP_PAGE.headMm - LP_PAGE.footMm; // 221mm
+
+// --- The paper stylesheet. Injected into the app's <head> for the on-screen
+//     sheet AND written verbatim into the print iframe, so "what you see" and
+//     "what you print" are the same CSS, not two hand-kept copies. ---
+const LP_PAPER_CSS = `
+.lp-sheet, .lp-band, .lp-body, .lp-body * {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.lp-sheet {
+  width: ${LP_PAGE.widthMm}mm;
+  min-height: ${LP_PAGE.heightMm}mm;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  color: #222222;
+  font-family: Georgia, 'Times New Roman', Times, serif;
+}
+.lp-band { flex: 0 0 auto; box-sizing: border-box; overflow: hidden; }
+.lp-band-head {
+  height: ${LP_PAGE.headMm}mm;
+  background-color: #2778b7;
+  background-image: linear-gradient(135deg, #2778b7 0%, #a8d339 100%);
+  display: flex; align-items: center; justify-content: center;
+  padding: 4mm 10mm;
+}
+.lp-band-head .lp-logo { height: 22mm; width: auto; max-width: 150mm; display: block; }
+.lp-band-foot {
+  height: ${LP_PAGE.footMm}mm;
+  background-color: #2778b7;
+  background-image: linear-gradient(135deg, #2778b7 0%, #a8d339 100%);
+  color: #ffffff;
+  padding: 4mm 10mm 3mm 10mm;
+  text-align: center;
+}
+.lp-foot-addr { font-size: 8.5pt; line-height: 1.35; margin-bottom: 2mm; }
+.lp-foot-title { font-size: 8pt; font-weight: 700; letter-spacing: .4px; margin-bottom: 1.6mm; }
+.lp-foot-grid {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 1.2mm 5mm; margin-bottom: 2mm;
+}
+.lp-foot-item { display: flex; align-items: center; gap: 1.4mm; font-size: 7.5pt; line-height: 1.2; }
+.lp-foot-item img { width: 3.6mm; height: 3.6mm; display: block; flex: 0 0 auto; }
+.lp-foot-copy {
+  font-size: 7pt; padding-top: 1.6mm;
+  border-top: 0.3mm solid rgba(255,255,255,0.45);
+}
+.lp-body {
+  min-height: ${LP_PAGE.contentMm}mm;
+  box-sizing: border-box;
+  padding: ${LP_PAGE.padTopMm}mm ${LP_PAGE.padSideMm}mm ${LP_PAGE.padBottomMm}mm ${LP_PAGE.padSideMm}mm;
+  font-family: Georgia, 'Times New Roman', Times, serif;
+  font-size: 12pt;
+  line-height: 1.5;
+  color: #222222;
+  outline: none;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.lp-body p { margin: 0 0 8px 0; }
+.lp-body h1 { font-size: 20pt; margin: 0 0 10px; }
+.lp-body h2 { font-size: 17pt; margin: 0 0 9px; }
+.lp-body h3 { font-size: 14pt; margin: 0 0 8px; }
+.lp-body h4 { font-size: 12.5pt; margin: 0 0 8px; }
+.lp-body ul, .lp-body ol { margin: 0 0 8px 0; padding-left: 26px; }
+.lp-body li { margin-bottom: 3px; }
+.lp-body blockquote {
+  margin: 0 0 8px 0; padding: 2px 0 2px 12px;
+  border-left: 3px solid #a8d339; color: #444444;
+}
+.lp-body pre {
+  font-family: Consolas, 'Courier New', monospace; font-size: 10.5pt;
+  margin: 0 0 8px 0; white-space: pre-wrap;
+}
+.lp-body hr { border: 0; border-top: 1px solid #999999; margin: 10px 0; }
+.lp-body table { border-collapse: collapse; margin: 0 0 8px 0; }
+.lp-body table td, .lp-body table th { border: 1px solid #888888; padding: 4px 7px; }
+.lp-body img { max-width: 100%; }
+.lp-sign-block { margin-top: 14mm; }
+`;
+
+// --- Print-only additions. Used ONLY inside the letterpad's private print
+//     iframe - never added to the main document, so the app's own print
+//     rules and @page margins are not affected in any way.
+//
+//     Each physical page is built by hand as one .lp-page block (see
+//     lpPaginateBody_ / lpPrint_ below) rather than left to the browser's
+//     own <thead>/<tfoot> table pagination. That table technique looks
+//     correct on paper but several browsers (Chrome included) do not
+//     reliably repeat a <tfoot> on every printed page - the footer can end
+//     up on only one page, or not sitting at that page's true bottom edge.
+//     Building each page explicitly removes that guesswork entirely: the
+//     footer's position is decided by this layout, not by the print
+//     engine's own pagination heuristics.
+//
+//     .lp-page is also centred (margin: 0 auto) rather than left-aligned,
+//     so if the destination paper turns out to be wider than A4 (e.g. the
+//     print dialog's Paper size is set to Letter instead of A4 - a browser/
+//     OS setting no website can change), the extra width is split evenly on
+//     both sides instead of showing up as a single blank strip down one
+//     edge. ---
+const LP_PRINT_CSS = `
+@page { size: A4; margin: 0; }
+html, body { margin: 0; padding: 0; background: #ffffff; }
+.lp-page {
+  width: ${LP_PAGE.widthMm}mm;
+  height: ${LP_PAGE.heightMm}mm;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  page-break-after: always;
+  break-after: page;
+}
+.lp-page:last-child { page-break-after: auto; break-after: auto; }
+.lp-page .lp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+`;
+
+const LP_EMPTY_HTML = '<p><br></p>';
+
+const lpState = {
+  ready: false,
+  savedRange: null,
+  pxPerMm: 96 / 25.4   // refreshed from a real probe element at init
+};
+
+// -------------------------------------------------------------------------
+// 19a. SET-UP  (runs once, the first time the Letterpad menu is opened)
+// -------------------------------------------------------------------------
+function initLetterpad_() {
+  const body = document.getElementById('lpBody');
+  if (!body) return;
+
+  if (!lpState.ready) {
+    lpInjectPaperCss_();
+    lpBindToolbar_();
+    body.innerHTML = LP_EMPTY_HTML;
+    lpState.ready = true;
+  }
+
+  lpMeasurePxPerMm_();
+  lpRefreshStatus_();
+}
+
+// Adds LP_PAPER_CSS to the page exactly once. Every selector in it is
+// .lp-* scoped, so it cannot reach any existing element.
+function lpInjectPaperCss_() {
+  if (document.getElementById('lpPaperStyle')) return;
+  const st = document.createElement('style');
+  st.id = 'lpPaperStyle';
+  st.textContent = LP_PAPER_CSS;
+  document.head.appendChild(st);
+}
+
+// Millimetres are only meaningful on screen once we know how many CSS pixels
+// the browser is currently giving us per mm. The probe is placed INSIDE the
+// zoomed wrapper so it is affected by the zoom setting in exactly the same
+// way the sheet is - that keeps the page-break guides correct at every zoom.
+function lpMeasurePxPerMm_() {
+  const wrap = document.getElementById('lpBodyWrap');
+  if (!wrap) return;
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;top:0;left:0;height:100mm;width:0;visibility:hidden;pointer-events:none;';
+  wrap.appendChild(probe);
+  const h = probe.offsetHeight;
+  probe.remove();
+  if (h > 0) lpState.pxPerMm = h / 100;
+}
+
+// -------------------------------------------------------------------------
+// 19b. SELECTION HELPERS
+//
+// Toolbar <select> menus steal focus from the editor, which collapses the
+// user's selection. So the last selection made inside the letterpad body is
+// remembered and put back before any dropdown-driven command runs - this is
+// what makes "select a sentence, then pick a font size" behave like Word.
+// -------------------------------------------------------------------------
+function lpIsInBody_(node) {
+  const body = document.getElementById('lpBody');
+  if (!body || !node) return false;
+  return node === body || body.contains(node.nodeType === 1 ? node : node.parentNode);
+}
+
+function lpSaveSelection_() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const r = sel.getRangeAt(0);
+  if (lpIsInBody_(r.commonAncestorContainer)) lpState.savedRange = r.cloneRange();
+}
+
+function lpRestoreSelection_() {
+  const body = document.getElementById('lpBody');
+  if (!body) return;
+  body.focus();
+  const sel = window.getSelection();
+  if (lpState.savedRange && lpIsInBody_(lpState.savedRange.commonAncestorContainer)) {
+    sel.removeAllRanges();
+    sel.addRange(lpState.savedRange);
+  }
+}
+
+function lpCurrentRange_() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const r = sel.getRangeAt(0);
+  return lpIsInBody_(r.commonAncestorContainer) ? r : null;
+}
+
+// Runs a document.execCommand against the letterpad, always in CSS mode so
+// the result is inline styles (which survive copy/paste and print cleanly)
+// rather than deprecated <font> tags.
+function lpExec_(cmd, value) {
+  lpRestoreSelection_();
+  try { document.execCommand('styleWithCSS', false, true); } catch (e) { /* not supported - harmless */ }
+  try { document.execCommand(cmd, false, value === undefined ? null : value); } catch (e) { /* ignore */ }
+  lpSaveSelection_();
+  lpRefreshStatus_();
+  lpSyncToolbarFromSelection_();
+}
+
+// -------------------------------------------------------------------------
+// 19c. FORMATTING COMMANDS
+// -------------------------------------------------------------------------
+
+// execCommand('fontSize') only understands the legacy 1-7 scale, which has no
+// point sizes at all. The standard workaround: apply size 7, then swap the
+// <font size="7"> tags it produced for spans carrying the real pt value.
+function lpSetFontSize_(pt) {
+  const body = document.getElementById('lpBody');
+  if (!body || !pt) return;
+  lpRestoreSelection_();
+  try { document.execCommand('styleWithCSS', false, false); } catch (e) { /* ignore */ }
+  document.execCommand('fontSize', false, '7');
+  body.querySelectorAll('font[size="7"]').forEach(f => {
+    const span = document.createElement('span');
+    span.style.fontSize = pt + 'pt';
+    while (f.firstChild) span.appendChild(f.firstChild);
+    f.parentNode.replaceChild(span, f);
+  });
+  try { document.execCommand('styleWithCSS', false, true); } catch (e) { /* ignore */ }
+  lpSaveSelection_();
+  lpRefreshStatus_();
+}
+
+// The block elements the current selection touches. Used by the paragraph
+// level settings (line spacing, space-after) which apply per paragraph, not
+// per character.
+function lpBlocksInSelection_() {
+  const body = document.getElementById('lpBody');
+  const range = lpCurrentRange_();
+  if (!body || !range) return [];
+  const blockTags = 'P,DIV,H1,H2,H3,H4,H5,H6,LI,BLOCKQUOTE,PRE,TD,TH';
+  const all = Array.from(body.querySelectorAll(blockTags));
+  const hit = all.filter(el => range.intersectsNode(el));
+  if (hit.length) return hit;
+  // Selection sits in a bare text node with no block wrapper yet.
+  let n = range.commonAncestorContainer;
+  if (n.nodeType === 3) n = n.parentNode;
+  while (n && n !== body && !blockTags.split(',').includes(n.nodeName)) n = n.parentNode;
+  return (n && n !== body) ? [n] : [body];
+}
+
+function lpApplyToBlocks_(styleProp, value) {
+  lpRestoreSelection_();
+  lpBlocksInSelection_().forEach(el => { el.style[styleProp] = value; });
+  lpSaveSelection_();
+  lpRefreshStatus_();
+}
+
+// --- Change case -------------------------------------------------------
+// Applied to the SELECTED text only, and applied in a way that keeps every
+// bit of formatting inside the selection (bold words stay bold, coloured
+// words stay coloured). The selection is cloned, only its text nodes are
+// rewritten, and the result is put back with insertHTML - which also means
+// Ctrl+Z undoes it like any normal edit.
+function lpChangeCase_(mode) {
+  const range = lpCurrentRange_();
+  if (!range || range.collapsed) {
+    toast('Select some text first, then choose a case.', 'error');
+    return;
+  }
+  const holder = document.createElement('div');
+  holder.appendChild(range.cloneContents());
+
+  const textNodes = [];
+  const walker = document.createTreeWalker(holder, NodeFilter.SHOW_TEXT, null);
+  let n;
+  while ((n = walker.nextNode())) textNodes.push(n);
+  if (!textNodes.length) return;
+
+  const combined = textNodes.map(t => t.nodeValue).join('');
+  const converted = lpConvertCase_(combined, mode);
+
+  if (converted.length === combined.length) {
+    // Normal path - re-slice the converted string back across the same text
+    // nodes, so "Sentence case" can see the whole sentence even when it is
+    // split across <b> / <span> boundaries.
+    let at = 0;
+    textNodes.forEach(t => {
+      const len = t.nodeValue.length;
+      t.nodeValue = converted.substr(at, len);
+      at += len;
+    });
+  } else {
+    // Rare locale case where changing case changes the string length
+    // (e.g. the German sharp s). Fall back to converting node by node.
+    textNodes.forEach(t => { t.nodeValue = lpConvertCase_(t.nodeValue, mode); });
+  }
+
+  lpRestoreSelection_();
+  document.execCommand('insertHTML', false, holder.innerHTML);
+  lpSaveSelection_();
+  lpRefreshStatus_();
+}
+
+function lpConvertCase_(str, mode) {
+  if (mode === 'upper') return str.toUpperCase();
+  if (mode === 'lower') return str.toLowerCase();
+  if (mode === 'toggle') {
+    return str.replace(/[a-zA-Z\u00C0-\u024F]/g, ch =>
+      ch === ch.toUpperCase() ? ch.toLowerCase() : ch.toUpperCase());
+  }
+  if (mode === 'title') {
+    return str.toLowerCase().replace(/(^|[\s"'(\[\-\/])(\p{L})/gu, (m, pre, ch) => pre + ch.toUpperCase());
+  }
+  if (mode === 'sentence') {
+    const lower = str.toLowerCase();
+    return lower.replace(/(^\s*|[.!?]\s+|\n\s*)(\p{L})/gu, (m, pre, ch) => pre + ch.toUpperCase());
+  }
+  return str;
+}
+
+// hiliteColor is the standard highlight command; backColor is the older
+// fallback some engines still want. Either can throw, so both are guarded.
+function lpHilite_(color) {
+  try { document.execCommand('styleWithCSS', false, true); } catch (e) { /* ignore */ }
+  let done = false;
+  try { done = document.execCommand('hiliteColor', false, color); } catch (e) { done = false; }
+  if (!done) {
+    try { document.execCommand('backColor', false, color); } catch (e) { /* ignore */ }
+  }
+}
+
+// --- Inserts -----------------------------------------------------------
+function lpInsertHtml_(html) {
+  lpRestoreSelection_();
+  document.execCommand('insertHTML', false, html);
+  lpSaveSelection_();
+  lpRefreshStatus_();
+}
+
+function lpInsertTable_() {
+  const rows = parseInt(prompt('How many rows?', '3'), 10);
+  if (!rows || rows < 1) return;
+  const cols = parseInt(prompt('How many columns?', '3'), 10);
+  if (!cols || cols < 1) return;
+  if (rows > 60 || cols > 12) {
+    toast('Please keep it under 60 rows and 12 columns.', 'error');
+    return;
+  }
+  let html = '<table style="width:100%;"><tbody>';
+  for (let r = 0; r < rows; r++) {
+    html += '<tr>';
+    for (let c = 0; c < cols; c++) html += '<td><br></td>';
+    html += '</tr>';
+  }
+  html += '</tbody></table><p><br></p>';
+  lpInsertHtml_(html);
+}
+
+function lpInsertDate_() {
+  const d = new Date();
+  const months = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  lpInsertHtml_(escapeHtml(d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear()));
+}
+
+function lpInsertSignature_() {
+  lpInsertHtml_(
+    '<div class="lp-sign-block"><p>Warm regards,</p><p><br></p><p><br></p>' +
+    '<p><b>Team SJ Physiotherapy</b></p></div><p><br></p>'
+  );
+}
+
+// -------------------------------------------------------------------------
+// 19d. STATUS  (word count, page count, page-break guide lines)
+// -------------------------------------------------------------------------
+function lpRefreshStatus_() {
+  const body = document.getElementById('lpBody');
+  const wrap = document.getElementById('lpBodyWrap');
+  if (!body || !wrap) return;
+
+  // Placeholder
+  const hasContent = body.textContent.trim().length > 0 ||
+    body.querySelector('img, hr, table') !== null;
+  body.classList.toggle('lp-is-empty', !hasContent);
+
+  // Word count
+  const words = body.textContent.trim() ? body.textContent.trim().split(/\s+/).length : 0;
+  const wc = document.getElementById('lpWordCount');
+  if (wc) wc.textContent = words + (words === 1 ? ' word' : ' words');
+
+  // Page count + guide lines at each printed page boundary
+  const pageH = LP_PAGE.contentMm * lpState.pxPerMm;
+  const totalH = wrap.offsetHeight;
+  const pages = Math.max(1, Math.ceil((totalH - 1) / pageH));
+
+  const pc = document.getElementById('lpPageCount');
+  if (pc) pc.textContent = pages + (pages === 1 ? ' page' : ' pages');
+
+  const guides = document.getElementById('lpGuides');
+  if (guides) {
+    let html = '';
+    for (let i = 1; i < pages; i++) {
+      html += '<div class="lp-guide" style="top:' + (i * pageH) + 'px;">' +
+        '<span>Page ' + i + ' ends here &middot; header and footer repeat on page ' + (i + 1) + '</span></div>';
+    }
+    guides.innerHTML = html;
+  }
+}
+
+// Lights up the B / I / U style buttons to match wherever the caret is.
+function lpSyncToolbarFromSelection_() {
+  const map = { bold: 'bold', italic: 'italic', underline: 'underline', strikeThrough: 'strikeThrough' };
+  Object.keys(map).forEach(cmd => {
+    let on = false;
+    try { on = document.queryCommandState(cmd); } catch (e) { on = false; }
+    const btn = document.querySelector('.lp-tb-btn[data-lpcmd="' + cmd + '"]');
+    if (btn) btn.classList.toggle('is-active', !!on);
+  });
+}
+
+// -------------------------------------------------------------------------
+// 19e. WIRING  (bound exactly once, from initLetterpad_)
+// -------------------------------------------------------------------------
+function lpBindToolbar_() {
+  const body = document.getElementById('lpBody');
+  const toolbar = document.getElementById('lpToolbar');
+  if (!body || !toolbar) return;
+
+  try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) { /* ignore */ }
+
+  // Plain command buttons. mousedown->preventDefault keeps the caret and the
+  // selection exactly where they were instead of the button stealing focus.
+  toolbar.querySelectorAll('.lp-tb-btn[data-lpcmd]').forEach(btn => {
+    btn.addEventListener('mousedown', e => e.preventDefault());
+    btn.addEventListener('click', () => lpExec_(btn.dataset.lpcmd));
+  });
+
+  // Dropdowns
+  const onSelect = (id, fn, reset) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('mousedown', () => lpSaveSelection_());
+    el.addEventListener('change', () => {
+      if (el.value !== '') fn(el.value);
+      if (reset) el.value = '';
+    });
+  };
+  onSelect('lpBlockStyle', v => lpExec_('formatBlock', '<' + v + '>'));
+  onSelect('lpFontFamily', v => lpExec_('fontName', v));
+  onSelect('lpFontSize', v => lpSetFontSize_(v));
+  onSelect('lpLineHeight', v => lpApplyToBlocks_('lineHeight', v), true);
+  onSelect('lpSpaceAfter', v => lpApplyToBlocks_('marginBottom', v + 'px'), true);
+  onSelect('lpChangeCase', v => lpChangeCase_(v), true);
+
+  // Colours
+  const foreInput = document.getElementById('lpForeColor');
+  const backInput = document.getElementById('lpBackColor');
+  if (foreInput) {
+    foreInput.addEventListener('mousedown', () => lpSaveSelection_());
+    foreInput.addEventListener('input', () => {
+      document.getElementById('lpForeSwatch').style.background = foreInput.value;
+      lpExec_('foreColor', foreInput.value);
+    });
+  }
+  if (backInput) {
+    backInput.addEventListener('mousedown', () => lpSaveSelection_());
+    backInput.addEventListener('input', () => {
+      document.getElementById('lpBackSwatch').style.background = backInput.value;
+      lpRestoreSelection_();
+      lpHilite_(backInput.value);
+      lpSaveSelection_();
+      lpRefreshStatus_();
+    });
+  }
+  const clearHi = document.getElementById('lpClearHighlight');
+  if (clearHi) {
+    clearHi.addEventListener('mousedown', e => e.preventDefault());
+    clearHi.addEventListener('click', () => {
+      lpRestoreSelection_();
+      lpHilite_('transparent');
+      lpSaveSelection_();
+    });
+  }
+
+  // Insert buttons
+  [['lpInsertHr', () => lpInsertHtml_('<hr><p><br></p>')],
+   ['lpInsertTable', lpInsertTable_],
+   ['lpInsertDate', lpInsertDate_],
+   ['lpInsertSign', lpInsertSignature_]].forEach(([id, fn]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('mousedown', e => e.preventDefault());
+    el.addEventListener('click', fn);
+  });
+
+  // Zoom - screen only. The print iframe never sees this, so zooming can
+  // never change what actually comes out of the printer.
+  const zoom = document.getElementById('lpZoom');
+  if (zoom) {
+    zoom.addEventListener('change', () => {
+      const wrap = document.getElementById('lpZoomWrap');
+      if (wrap) wrap.style.zoom = zoom.value;
+      // Re-measure: CSS zoom changes how many pixels a millimetre is worth.
+      setTimeout(() => { lpMeasurePxPerMm_(); lpRefreshStatus_(); }, 0);
+    });
+  }
+
+  // Editor events
+  body.addEventListener('input', () => { lpSaveSelection_(); lpRefreshStatus_(); });
+  body.addEventListener('keyup', () => { lpSaveSelection_(); lpSyncToolbarFromSelection_(); });
+  body.addEventListener('mouseup', () => { lpSaveSelection_(); lpSyncToolbarFromSelection_(); });
+  body.addEventListener('focus', () => lpSaveSelection_());
+
+  // Paste: honour the "paste as plain text" checkbox, and always strip the
+  // junk (scripts, positioned elements) Word/browsers like to bring along.
+  body.addEventListener('paste', e => {
+    const plainOnly = document.getElementById('lpPastePlain');
+    if (plainOnly && plainOnly.checked) {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+      document.execCommand('insertText', false, text);
+      lpRefreshStatus_();
+    } else {
+      setTimeout(() => {
+        body.querySelectorAll('script, style, link, meta, iframe, object, embed').forEach(el => el.remove());
+        lpRefreshStatus_();
+      }, 0);
+    }
+  });
+
+  // Ctrl+P inside the Letterpad should print the LETTERPAD, not fall through
+  // to the app's bill print pipeline (which would produce a blank page here,
+  // because no data-print-target is set for this screen).
+  document.addEventListener('keydown', e => {
+    const view = document.getElementById('view-letterpad');
+    if (!view || !view.classList.contains('active')) return;
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
+      e.preventDefault();
+      lpPrint_();
+    }
+  });
+
+  // Reset (with the confirm popup)
+  const resetBtn = document.getElementById('lpResetBtn');
+  const modal = document.getElementById('lpResetModal');
+  const waitBtn = document.getElementById('lpResetWaitBtn');
+  const okBtn = document.getElementById('lpResetOkBtn');
+  if (resetBtn && modal) {
+    resetBtn.addEventListener('click', () => modal.classList.add('show'));
+  }
+  if (waitBtn) waitBtn.addEventListener('click', () => modal.classList.remove('show'));
+  if (modal) {
+    // Clicking the dark backdrop counts as "wait" - it closes the popup and
+    // changes nothing, same as the Wait button.
+    modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('show'); });
+  }
+  if (okBtn) {
+    okBtn.addEventListener('click', () => {
+      body.innerHTML = LP_EMPTY_HTML;
+      lpState.savedRange = null;
+      modal.classList.remove('show');
+      lpRefreshStatus_();
+      body.focus();
+      toast('Letterpad cleared.', 'success');
+    });
+  }
+
+  const printBtn = document.getElementById('lpPrintBtn');
+  if (printBtn) printBtn.addEventListener('click', () => lpPrint_());
+
+  window.addEventListener('resize', () => {
+    const view = document.getElementById('view-letterpad');
+    if (view && view.classList.contains('active')) { lpMeasurePxPerMm_(); lpRefreshStatus_(); }
+  });
+}
+
+// -------------------------------------------------------------------------
+// 19f. PAGINATION  (print-time only)
+//
+// The body's own top-level blocks (paragraphs, headings, lists, tables...)
+// are measured once in a hidden, off-screen clone and bucketed into
+// page-sized chunks. Each chunk becomes the body of its own full
+// header+body+footer .lp-page (built in lpPrint_ below). Blocks are never
+// split mid-element - only distributed at their own boundaries - so a
+// paragraph or list item is never cut in half by a page break.
+// -------------------------------------------------------------------------
+
+// Kept a few mm short of the true 221mm content budget (LP_PAGE.contentMm)
+// so that print-engine rounding (CSS mm resolved at the print engine's own
+// DPI, which is not always identical to how the same mm value measures
+// here) can never tip a line over onto an unwanted extra, near-empty page.
+const LP_PRINT_SAFETY_MM = 5;
+
+// Returns an array of HTML strings, one per printed page's body content.
+// Falls back to a single page (the body's own HTML, unchanged) whenever
+// there is nothing sensible to measure - so a short, single-page letter,
+// still the overwhelmingly common case, prints exactly as before.
+function lpPaginateBody_(bodyEl) {
+  if (!bodyEl.childNodes.length) return [bodyEl.innerHTML || LP_EMPTY_HTML];
+
+  // Work on a detached clone - this must never touch what the user is
+  // actively editing.
+  const source = document.createElement('div');
+  source.innerHTML = bodyEl.innerHTML;
+
+  // A contenteditable region can occasionally leave a bare run of text
+  // sitting directly in the body (not inside a <p>), typically after a
+  // paste. Wrap any such run so every top-level node is a normal,
+  // measurable block element.
+  Array.from(source.childNodes).forEach(n => {
+    if (n.nodeType === 3 && n.nodeValue.trim()) {
+      const wrap = document.createElement('p');
+      source.insertBefore(wrap, n);
+      wrap.appendChild(n);
+    }
+  });
+  const blocks = Array.from(source.childNodes).filter(n => n.nodeType === 1);
+  if (!blocks.length) return [bodyEl.innerHTML || LP_EMPTY_HTML];
+
+  // Measured off-screen, at the CSS reference resolution (96px = 1in =
+  // 25.4mm - fixed by the CSS spec, independent of the actual screen's own
+  // DPI or of the on-screen zoom applied to the live editor). The host
+  // carries the real .lp-body class so it inherits the exact same padding,
+  // font and line-height the printed page will use, at the printed page's
+  // real full width, so the measured heights match the real print output.
+  const host = document.createElement('div');
+  host.className = 'lp-body';
+  host.style.cssText =
+    'position:absolute; left:-99999px; top:0; visibility:hidden; ' +
+    'width:' + LP_PAGE.widthMm + 'mm; height:auto; min-height:0; overflow:visible;';
+  blocks.forEach(b => host.appendChild(b));
+  document.body.appendChild(host);
+
+  const pxPerMm = 96 / 25.4;
+  const budgetPx = (LP_PAGE.contentMm - LP_PRINT_SAFETY_MM) * pxPerMm;
+
+  const hostChildren = Array.from(host.children);
+  const pages = [];
+  let pageStart = 0;
+  let pageTop = hostChildren.length ? hostChildren[0].offsetTop : 0;
+
+  hostChildren.forEach((el, i) => {
+    const bottom = (el.offsetTop + el.offsetHeight) - pageTop;
+    if (bottom > budgetPx && i > pageStart) {
+      pages.push(hostChildren.slice(pageStart, i).map(e => e.outerHTML).join(''));
+      pageStart = i;
+      pageTop = el.offsetTop;
+    }
+  });
+  pages.push(hostChildren.slice(pageStart).map(e => e.outerHTML).join(''));
+
+  host.remove();
+  return pages.length ? pages : [bodyEl.innerHTML || LP_EMPTY_HTML];
+}
+
+// -------------------------------------------------------------------------
+// 19g. PRINT / SAVE AS PDF
+//
+// Printed from a private, throwaway iframe carrying its own stylesheet.
+// That is deliberate: the app's existing @media print block hides everything
+// except body[data-print-target] and sets a 5mm @page margin for invoices.
+// A letterhead needs a 0mm margin (the bands run edge to edge), and @page
+// cannot be scoped per element - so rather than touch those shared rules and
+// risk the bill layout, the letterpad simply prints somewhere else entirely.
+//
+// Every page is built from lpPaginateBody_'s chunks, each wrapped in its own
+// full header+body+footer .lp-page - see the comment on LP_PRINT_CSS for why
+// this replaced the earlier <thead>/<tfoot> table approach.
+// -------------------------------------------------------------------------
+function lpPrint_() {
+  const body = document.getElementById('lpBody');
+  const header = document.getElementById('lpHeader');
+  const footer = document.getElementById('lpFooter');
+  if (!body || !header || !footer) return;
+
+  if (!body.textContent.trim() && !body.querySelector('img, hr, table')) {
+    toast('The letterpad is empty - type something first.', 'error');
+    return;
+  }
+
+  const headerHtml = header.outerHTML;
+  const footerHtml = footer.outerHTML;
+  const pagesHtml = lpPaginateBody_(body).map(chunk =>
+    '<div class="lp-page">' + headerHtml +
+    '<div class="lp-body">' + chunk + '</div>' +
+    footerHtml + '</div>'
+  ).join('');
+
+  const docHtml =
+    '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+    '<title>SJ Physiotherapy - Letter</title>' +
+    '<style>' + LP_PAPER_CSS + LP_PRINT_CSS + '</style>' +
+    '</head><body>' + pagesHtml + '</body></html>';
+
+  const old = document.getElementById('lpPrintFrame');
+  if (old) old.remove();
+
+  const frame = document.createElement('iframe');
+  frame.id = 'lpPrintFrame';
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+  document.body.appendChild(frame);
+
+  const fdoc = frame.contentWindow.document;
+  fdoc.open();
+  fdoc.write(docHtml);
+  fdoc.close();
+
+  // The letterhead logo and the contact icons are remote images. Printing
+  // before they have arrived would silently produce a letter with gaps in
+  // the header and footer, so wait for them (with a ceiling, so a slow or
+  // unreachable image can never leave the user stuck).
+  const imgs = Array.from(fdoc.images || []);
+  let pending = imgs.filter(i => !i.complete).length;
+  let fired = false;
+
+  const go = () => {
+    if (fired) return;
+    fired = true;
+    setTimeout(() => {
+      try {
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+      } catch (e) {
+        toast('Could not open the print dialog. Please try again.', 'error');
+      }
+    }, 120);
+  };
+
+  if (pending === 0) {
+    go();
+  } else {
+    imgs.forEach(img => {
+      if (img.complete) return;
+      const done = () => { pending--; if (pending <= 0) go(); };
+      img.addEventListener('load', done, { once: true });
+      img.addEventListener('error', done, { once: true });
+    });
+    setTimeout(go, 6000); // hard ceiling
+  }
+
+  // Clean the iframe up afterwards. Removing it too early can cancel the
+  // print dialog in some browsers, so this waits for afterprint and keeps a
+  // long fallback timer for browsers that never fire it.
+  try {
+    frame.contentWindow.addEventListener('afterprint', () => {
+      setTimeout(() => { const f = document.getElementById('lpPrintFrame'); if (f) f.remove(); }, 500);
+    });
+  } catch (e) { /* ignore */ }
+  setTimeout(() => { const f = document.getElementById('lpPrintFrame'); if (f) f.remove(); }, 120000);
+}
