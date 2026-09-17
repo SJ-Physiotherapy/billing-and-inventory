@@ -5483,14 +5483,27 @@ function lpPrint_() {
   const go = () => {
     if (fired) return;
     fired = true;
-    setTimeout(() => {
-      try {
-        frame.contentWindow.focus();
-        frame.contentWindow.print();
-      } catch (e) {
-        toast('Could not open the print dialog. Please try again.', 'error');
-      }
-    }, 120);
+    // A fixed setTimeout here used to guess how long the browser needs to
+    // lay out and paint the freshly-written iframe before printing it. On
+    // a phone right after typing, the main thread is often still busy
+    // (keyboard closing, autocorrect settling), so a guessed delay can run
+    // out before the paint actually happens - producing a blank print on
+    // the first try, then working a moment later once the device is idle
+    // again. Two chained requestAnimationFrame calls instead explicitly
+    // wait for the browser to confirm a real paint has happened, so this
+    // can no longer race ahead of the content actually being drawn.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          try {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+          } catch (e) {
+            toast('Could not open the print dialog. Please try again.', 'error');
+          }
+        }, 60);
+      });
+    });
   };
 
   if (pending === 0) {
