@@ -3,21 +3,19 @@
  *  SJ Physiotherapy - BILLING & SALES ANALYSIS SYSTEM
  *  Backend: Google Apps Script  (acts as the API + database layer)
  *  Database: Google Sheets (this bound spreadsheet)
- *  Payments: Razorpay UPI QR Codes API + Webhook
+ *  Payments: Cash / Bank only - recorded manually, no online payment gateway
  * ==========================================================================
  *  HOW THIS FILE WORKS
  *  - doGet(e)  -> handles read-only requests  (?action=...)
- *  - doPost(e) -> handles two kinds of traffic on the SAME url:
- *       1) Normal app requests from the website  (JSON body: {action, payload})
- *       2) Razorpay webhook calls (identified by ?token=WEBHOOK_TOKEN)
+ *  - doPost(e) -> handles normal app requests from the website
+ *    (JSON body: {action, payload})
  *  - Run setupDatabase() ONCE from the Apps Script editor to create all
  *    sheets, headers and default rows. See SETUP_GUIDE.md for full steps.
  * ==========================================================================
  */
 
 // ---------------------------------------------------------------------------
-// 0. CONFIG - you will fill the Razorpay keys into the Settings sheet later,
-//    NOT here. Nothing secret is hard-coded in this file.
+// 0. CONFIG - nothing secret is hard-coded in this file.
 // ---------------------------------------------------------------------------
 const SHEET = {
   SETTINGS: 'Settings',
@@ -26,7 +24,6 @@ const SHEET = {
   PRODUCTS: 'Products',
   BILLS: 'Bills',
   BILL_ITEMS: 'BillItems',
-  PAYMENT_LOGS: 'PaymentLogs',
   DASHBOARD: 'Dashboard',
   STOCK_LOG: 'StockLog',
   UNIVERSAL_REPORT: 'UniversalReport',
@@ -389,7 +386,6 @@ function doGet(e) {
       case 'bootstrap':      result = apiBootstrap(); break;
       case 'findCustomer':   result = apiFindCustomer(e.parameter.phone, e.parameter.name); break;
       case 'getCustomers':   result = apiGetCustomersList(); break;
-      case 'getBillStatus':  result = apiGetBillStatus(e.parameter.billId); break;
       case 'getBill':        result = apiGetBill(e.parameter.billId); break;
       case 'getDashboardData': result = apiGetDashboardData(e.parameter); break;
       case 'getBillers':     result = apiGetBillers(); break;
@@ -415,14 +411,6 @@ function doGet(e) {
 function doPost(e) {
   try {
     migrateSchema_();
-    // ---- Branch 1: Razorpay webhook (identified via a secret URL token) ----
-    const settings = getSettingsMap_();
-    const webhookToken = settings['WebhookToken'] || '';
-    if (e.parameter.token && webhookToken && e.parameter.token === webhookToken) {
-      return handleRazorpayWebhook_(e, settings);
-    }
-
-    // ---- Branch 2: normal app API call ----
     const body = JSON.parse(e.postData.contents);
     const action = body.action;
     const p = body.payload || {};
@@ -452,11 +440,11 @@ function doPost(e) {
       case 'deleteBiller':   result = apiDeleteBiller(p); break;
       case 'setProductStock': result = apiSetProductStock(p); break;
       case 'updateSettings': result = apiUpdateSettings(p); break;
-      case 'checkQrStatusNow': result = apiCheckQrStatusNow(p); break;
       case 'emailBillPdf':   result = apiEmailBillPdf(p); break;
       case 'autoExpandDatabase': result = apiAutoExpandDatabase(p); break;
       case 'getDataDiagnostics': result = apiGetDataDiagnostics(p); break;
       case 'resetToActiveOnly': result = apiResetToActiveOnly(p); break;
+      case 'refreshNumbering': result = apiRefreshNumbering(p); break;
       case 'updateTheme': result = apiUpdateTheme(p); break;
       case 'resetTheme': result = apiResetTheme(p); break;
       case 'getCustomCharts': result = apiGetCustomCharts(); break;
@@ -484,7 +472,7 @@ function jsonOut(obj) {
 //     this app's code is the ONLY gate. Before this, doGet actions had no
 //     check at all - anyone with the /exec URL could call ?action=getBill
 //     etc. directly with no login. Now every action (GET and POST, except
-//     'login' itself and the Razorpay webhook) requires a valid session
+//     'login' itself) requires a valid session
 //     token, minted only by a successful apiLogin() and stored server-side
 //     in CacheService (max 6h, matches Apps Script's own cache ceiling).
 // ---------------------------------------------------------------------------
@@ -566,7 +554,7 @@ function ss_() {
 // via File > Make a copy, or by re-entering it) so staff logins, the
 // product catalog, and the customer list never "reset."
 //
-// TRANSACTIONAL DATA (Bills, BillItems, PaymentLogs, StockLog) is what
+// TRANSACTIONAL DATA (Bills, BillItems, StockLog) is what
 // actually grows large over time - this is the data that gets archived and
 // starts fresh in the new active spreadsheet, and Reports/Find-Bill
 // transparently read across both.
@@ -685,7 +673,7 @@ function RUN_ME_TO_UNDO_LAST_SWITCH() {
 //       3. Copies Settings, Billers, Products and Customers across so
 //          staff logins, the product list, stock counts and the customer
 //          list carry forward with nothing to redo - Bills/BillItems/
-//          PaymentLogs/StockLog are deliberately left empty on the new
+//          StockLog are deliberately left empty on the new
 //          sheet, since those are exactly what "starting fresh" means.
 //       4. Registers the OLD spreadsheet as a read-only archive and points
 //          every future write at the new one - identical bookkeeping to
@@ -709,7 +697,7 @@ function createFreshDatabaseSpreadsheet_(name) {
 }
 
 // Copies MASTER data forward from one spreadsheet to another - Settings,
-// Billers, Products, Customers. Never touches Bills/BillItems/PaymentLogs/
+// Billers, Products, Customers. Never touches Bills/BillItems/
 // StockLog (that transactional history is exactly what stays behind on the
 // archived spreadsheet). Safe to call on a freshly-provisioned target sheet
 // (headers only, one row) - it simply fills in the rows underneath.
@@ -887,6 +875,66 @@ function apiResetToActiveOnly(p) {
   }
 }
 
+// Non-destructive counterpart to apiResetToActiveOnly above. Use this after
+// manually editing a Bill/Patient/Product ID directly in the sheet (e.g.
+// hand-correcting a bill number) - it re-bases every ID counter on the
+// HIGHEST id actually present right now, scanning the active spreadsheet
+// AND every linked archive (exactly the same scan nextSequentialId_ itself
+// does the very first time a counter is ever used - see the note above it).
+// Unlike "Reset Numbering & Forget Old Archives", this does NOT touch
+// ARCHIVE_SPREADSHEET_IDS - archives stay linked exactly as they were.
+// This is what fixes "I edited the DB by hand but the app still shows the
+// old/wrong next number" without also wiping out archive links you still
+// want.
+function apiRefreshNumbering(p) {
+  const auth = requireSuperAdmin_(p.superAdminUser, p.superAdminPass);
+  if (!auth.ok) return auth;
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const activeSs = ss_();
+    const archives = openArchives_(); // NOT forgotten - only read from here
+
+    const billsSh = activeSs.getSheetByName(SHEET.BILLS);
+    const custSh = activeSs.getSheetByName(SHEET.CUSTOMERS);
+    const prodSh = activeSs.getSheetByName(SHEET.PRODUCTS);
+
+    // Highest id suffix for one logical sheet, across the active spreadsheet
+    // AND every reachable archive (an unreachable archive is already
+    // skipped/logged by openArchives_, same as everywhere else it's used).
+    function highestAcrossActiveAndArchives_(sheetName, activeSheet, idColIndex) {
+      let max = highestExistingIdSuffix_(activeSheet, idColIndex);
+      archives.forEach(a => {
+        const sh = a.ss.getSheetByName(sheetName);
+        if (sh) max = Math.max(max, highestExistingIdSuffix_(sh, idColIndex));
+      });
+      return max;
+    }
+
+    const billMax = highestAcrossActiveAndArchives_(SHEET.BILLS, billsSh, 0);
+    const custMax = highestAcrossActiveAndArchives_(SHEET.CUSTOMERS, custSh, 0);
+    const prodMax = highestAcrossActiveAndArchives_(SHEET.PRODUCTS, prodSh, 0);
+
+    props.setProperty('IDCTR_SJP', String(billMax));
+    props.setProperty('IDCTR_PAT', String(custMax));
+    props.setProperty('IDCTR_PROD', String(prodMax));
+
+    return {
+      ok: true,
+      archivesScanned: archives.length,
+      nextBillId: 'SJP-' + Utilities.formatString('%06d', billMax + 1),
+      nextCustomerId: 'PAT-' + Utilities.formatString('%04d', custMax + 1),
+      nextProductId: 'PROD-' + Utilities.formatString('%04d', prodMax + 1)
+    };
+  } catch (err) {
+    return { ok: false, error: 'Could not refresh numbering: ' + err };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 0e. CAPACITY MONITORING - this is what actually answers "how will I know
 //     when it's time to archive?" without anyone having to remember to
@@ -988,7 +1036,6 @@ function apiUpdateSettings(p) {
   const fields = [
     'CompanyName', 'Address', 'Phone', 'Website', 'GSTNumber',
     'LogoURL', 'PrintLogoURL',
-    'RazorpayKeyId', 'RazorpayKeySecret',
     'CompanyEmail', 'CGSTPercent', 'SGSTPercent',
     'BankName', 'BankAccountNo', 'BankIFSC', 'BankAccountHolder',
     'AuthorizedSignatoryLabel',
@@ -1680,19 +1727,13 @@ function apiSaveBill(p) {
     const billsSh = ss_().getSheetByName(SHEET.BILLS);
     const billId = nextBillId_();
 
-    // 5. Payment handling
-    let paymentStatus = 'Cash Collected';
-    let qrImageUrl = '', qrId = '', paymentLink = '';
-    if (p.paymentMethod === 'UPI') {
-      const rp = createRazorpayUpiQr_(billId, totalAmount);
-      if (!rp.ok) {
-        return { ok: false, error: 'Razorpay QR creation failed: ' + rp.error };
-      }
-      paymentStatus = 'Pending';
-      qrImageUrl = rp.imageUrl;
-      qrId = rp.qrId;
-      paymentLink = rp.imageUrl;
-    }
+    // 5. Payment handling - Cash / Bank only, collected immediately. No
+    // online payment gateway, so there is no QR code, payment link, or
+    // "Pending" status to track - every bill is Cash Collected on save.
+    // qrImageUrl/qrId/paymentLink are kept only because the Bills sheet
+    // still has those columns from before (left untouched, unused).
+    const paymentStatus = 'Cash Collected';
+    const qrImageUrl = '', qrId = '', paymentLink = '';
 
     // 6. Write Bill row
     billsSh.appendRow([
@@ -1729,138 +1770,10 @@ function apiSaveBill(p) {
 }
 
 // ---------------------------------------------------------------------------
-// 10. RAZORPAY - CREATE UPI QR (server-to-server, key never touches frontend)
-// ---------------------------------------------------------------------------
-function createRazorpayUpiQr_(billId, amount) {
-  const s = getSettingsMap_();
-  const keyId = s.RazorpayKeyId, keySecret = s.RazorpayKeySecret;
-  if (!keyId || !keySecret) return { ok: false, error: 'Razorpay keys not set in Settings' };
-
-  const payload = {
-    type: 'upi_qr',
-    name: 'Bill ' + billId,
-    usage: 'single_use',
-    fixed_amount: true,
-    payment_amount: Math.round(amount * 100), // paise
-    description: 'SJ Physiotherapy - ' + billId,
-    close_by: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // valid 24h
-    notes: { billId: billId }
-  };
-
-  const res = UrlFetchApp.fetch('https://api.razorpay.com/v1/qr_codes', {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { Authorization: 'Basic ' + Utilities.base64Encode(keyId + ':' + keySecret) },
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  });
-
-  const code = res.getResponseCode();
-  const body = JSON.parse(res.getContentText());
-  if (code >= 200 && code < 300) {
-    return { ok: true, qrId: body.id, imageUrl: body.image_url };
-  }
-  return { ok: false, error: (body.error && body.error.description) || res.getContentText() };
-}
-
-// ---------------------------------------------------------------------------
-// 11. RAZORPAY WEBHOOK HANDLER
-// ---------------------------------------------------------------------------
-function handleRazorpayWebhook_(e, settings) {
-  const raw = e.postData.contents;
-  logPayment_('WebhookReceived', '', '', '', raw);
-  try {
-    const body = JSON.parse(raw);
-    const event = body.event;
-    if (event === 'qr_code.credited') {
-      const qr = body.payload.qr_code.entity;
-      const payment = body.payload.payment.entity;
-      confirmPaymentServerSide_(qr.id, payment.id, settings);
-    }
-    return jsonOut({ ok: true });
-  } catch (err) {
-    logPayment_('WebhookError', '', '', '', String(err));
-    return jsonOut({ ok: false, error: String(err) });
-  }
-}
-
-// Extra safety: re-confirm the payment status directly with Razorpay's API
-// before marking a bill Paid (protects against a spoofed call to our URL).
-function confirmPaymentServerSide_(qrId, paymentId, settings) {
-  const keyId = settings.RazorpayKeyId, keySecret = settings.RazorpayKeySecret;
-  const res = UrlFetchApp.fetch('https://api.razorpay.com/v1/payments/' + paymentId, {
-    method: 'get',
-    headers: { Authorization: 'Basic ' + Utilities.base64Encode(keyId + ':' + keySecret) },
-    muteHttpExceptions: true
-  });
-  const body = JSON.parse(res.getContentText());
-  if (body.status !== 'captured') {
-    logPayment_('PaymentNotCaptured', '', qrId, paymentId, JSON.stringify(body));
-    return;
-  }
-  markBillPaidByQrId_(qrId, paymentId);
-}
-
-function markBillPaidByQrId_(qrId, paymentId) {
-  const sh = ss_().getSheetByName(SHEET.BILLS);
-  const data = sh.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][14]) === String(qrId)) { // col O = RazorpayQrId
-      sh.getRange(i + 1, 12).setValue('Paid');       // col L = PaymentStatus
-      sh.getRange(i + 1, 16).setValue(paymentId);    // col P = RazorpayPaymentId
-      sh.getRange(i + 1, 18).setValue(new Date());   // col R = UpdatedAt
-      logPayment_('PaymentConfirmed', data[i][0], qrId, paymentId, 'OK');
-      return;
-    }
-  }
-  logPayment_('BillNotFoundForQr', '', qrId, paymentId, 'No matching bill row');
-}
-
-function logPayment_(eventName, billId, qrId, paymentId, raw) {
-  const sh = ss_().getSheetByName(SHEET.PAYMENT_LOGS);
-  sh.appendRow([new Date(), billId, eventName, qrId, paymentId, raw]);
-}
-
-// Manual "check now" button on the frontend - polls Razorpay directly in
-// case the webhook is delayed or not yet configured.
-function apiCheckQrStatusNow(p) {
-  const s = getSettingsMap_();
-  const keyId = s.RazorpayKeyId, keySecret = s.RazorpayKeySecret;
-  const res = UrlFetchApp.fetch('https://api.razorpay.com/v1/qr_codes/' + p.qrId + '/payments', {
-    method: 'get',
-    headers: { Authorization: 'Basic ' + Utilities.base64Encode(keyId + ':' + keySecret) },
-    muteHttpExceptions: true
-  });
-  const body = JSON.parse(res.getContentText());
-  if (body.items && body.items.length) {
-    const payment = body.items[0];
-    if (payment.status === 'captured') {
-      markBillPaidByQrId_(p.qrId, payment.id);
-      return { ok: true, status: 'Paid' };
-    }
-  }
-  return { ok: true, status: 'Pending' };
-}
-
-// ---------------------------------------------------------------------------
-// 12. BILL STATUS / LOOKUP / EDIT
+// 10. BILL LOOKUP / EDIT
 // ---------------------------------------------------------------------------
 // Searches the active spreadsheet first, then every archive - so a bill
 // from years ago is found exactly as reliably as one from this morning.
-function apiGetBillStatus(billId) {
-  for (const db of allDbs_()) {
-    const sh = db.ss.getSheetByName(SHEET.BILLS);
-    if (!sh) continue;
-    const data = sh.getDataRange().getValues();
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][0]) === String(billId)) {
-        return { ok: true, status: data[i][11], source: db.label, editable: db.label === 'Active' };
-      }
-    }
-  }
-  return { ok: false, error: 'Bill not found' };
-}
-
 function apiGetBill(billId) {
   let billRow = null, foundDb = null;
   for (const db of allDbs_()) {
@@ -2390,7 +2303,6 @@ function formatDate_(val) {
 function paymentMethodLabel_(method) {
   if (method === 'Cash') return 'Cash in Hand';
   if (method === 'Bank') return 'Bank Transaction';
-  if (method === 'UPI') return 'UPI / Bank Transaction';
   return method || '-';
 }
 
@@ -2636,7 +2548,7 @@ function apiGetDashboardData(params) {
   }
 
   let totalSalesCount = 0, totalSalesAmount = 0, totalQtySold = 0;
-  let cashAmount = 0, upiAmount = 0, bankAmount = 0;
+  let cashAmount = 0, bankAmount = 0;
   const customerSet = new Set();
   const productTotals = {}; // name -> {qty, amount}
   const billerTotals = {}; // billerName -> {count, amount}
@@ -2661,7 +2573,6 @@ function apiGetDashboardData(params) {
       customerSet.add(meta.customerId);
       if (meta.paymentMethod === 'Cash') cashAmount += amount;
       if (meta.paymentMethod === 'Bank') bankAmount += amount;
-      if (meta.paymentMethod === 'UPI' && meta.paymentStatus === 'Paid') upiAmount += amount;
       if (!billerTotals[meta.billerName]) billerTotals[meta.billerName] = { count: 0, amount: 0 };
       billerTotals[meta.billerName].amount += amount;
     }
@@ -2683,7 +2594,6 @@ function apiGetDashboardData(params) {
       customerSet.add(meta.customerId);
       if (meta.paymentMethod === 'Cash') cashAmount += meta.amount;
       if (meta.paymentMethod === 'Bank') bankAmount += meta.amount;
-      if (meta.paymentMethod === 'UPI' && meta.paymentStatus === 'Paid') upiAmount += meta.amount;
       if (!billerTotals[meta.billerName]) billerTotals[meta.billerName] = { count: 0, amount: 0 };
       billerTotals[meta.billerName].count += 1;
       billerTotals[meta.billerName].amount += meta.amount;
@@ -2718,7 +2628,6 @@ function apiGetDashboardData(params) {
       uniqueCustomers: customerSet.size,
       cashAmount: cashAmount,
       bankAmount: bankAmount,
-      upiAmount: upiAmount,
       productChart: productChart,
       billerChart: billerChart,
       // Echoes back exactly what the server understood from the request -
@@ -3487,7 +3396,6 @@ function provisionSchemaOnSpreadsheet_(ssRef) {
     'ShowTaxOverride', 'ShowBankOverride', 'DiscountPercent'
   ]);
   createSheetIfMissing_(ssRef, SHEET.BILL_ITEMS, ['BillID', 'ProductName', 'UnitPrice', 'Qty', 'LineTotal', 'DiscountPercent']);
-  createSheetIfMissing_(ssRef, SHEET.PAYMENT_LOGS, ['Timestamp', 'BillID', 'Event', 'RazorpayQrId', 'RazorpayPaymentId', 'RawPayload']);
   createSheetIfMissing_(ssRef, SHEET.DASHBOARD, ['This sheet is a placeholder - live charts are rendered on the website. Run buildDashboardSheet() any time to refresh a snapshot here.']);
   createSheetIfMissing_(ssRef, SHEET.UNIVERSAL_REPORT, UNIVERSAL_REPORT_HEADERS);
   createSheetIfMissing_(ssRef, SHEET.DAILY_REPORT, DAILY_REPORT_HEADERS);
@@ -3533,10 +3441,7 @@ function setupDatabase() {
       ['ShowAuthorizedSignatory', 'TRUE'],
       ['Currency', 'INR'],
       ['SuperAdminUser', 'SJ Physiotherapy'],
-      ['SuperAdminPass', 'SJ12345'],
-      ['RazorpayKeyId', ''],
-      ['RazorpayKeySecret', ''],
-      ['WebhookToken', Utilities.getUuid()]
+      ['SuperAdminPass', 'SJ12345']
     ].concat(THEME_SETTING_DEFAULTS);
     defaults.forEach(row => settingsSh.appendRow(row));
   }
@@ -3561,8 +3466,7 @@ function setupDatabase() {
   buildDailyReportSheet_();
 
   SpreadsheetApp.getUi().alert(
-    'Setup complete!\n\nYour Webhook Token is:\n' + getSettingsMap_().WebhookToken +
-    '\n\nYou will need this to configure the Razorpay webhook URL. See SETUP_GUIDE.md.'
+    'Setup complete!\n\nAll sheets, headers and default rows are ready. See SETUP_GUIDE.md for the remaining steps.'
   );
 }
 
@@ -3610,7 +3514,7 @@ function buildDashboardSheet() {
   const items = ssRef.getSheetByName(SHEET.BILL_ITEMS).getDataRange().getValues();
 
   let totalSalesCount = 0, totalSalesAmount = 0, totalQtySold = 0;
-  let cashAmount = 0, upiAmount = 0;
+  let cashAmount = 0, bankAmount = 0;
   const customerSet = {};
   for (let i = 1; i < bills.length; i++) {
     const row = bills[i];
@@ -3619,7 +3523,7 @@ function buildDashboardSheet() {
     totalSalesAmount += Number(row[10]) || 0;
     if (row[2]) customerSet[row[2]] = true;
     if (String(row[8]) === 'Cash') cashAmount += Number(row[10]) || 0;
-    else if (String(row[8]) === 'UPI') upiAmount += Number(row[10]) || 0;
+    else if (String(row[8]) === 'Bank') bankAmount += Number(row[10]) || 0;
   }
   const uniqueCustomers = Object.keys(customerSet).length;
 
@@ -3660,14 +3564,14 @@ function buildDashboardSheet() {
     sh.getRange(prodStartRow + 1, 1, productRows.length, 3).setValues(productRows);
   }
 
-  // Cash vs UPI table
+  // Cash vs Bank table
   const payStartRow = prodStartRow + productRows.length + 4;
-  sh.getRange(payStartRow - 1, 1).setValue('Cash vs UPI (Amount Received)').setFontWeight('bold').setFontSize(12);
+  sh.getRange(payStartRow - 1, 1).setValue('Cash vs Bank (Amount Received)').setFontWeight('bold').setFontSize(12);
   sh.getRange(payStartRow, 1, 1, 2).setValues([['Method', 'Amount (₹)']])
     .setFontWeight('bold').setBackground('#E1341E').setFontColor('#FFFFFF');
   sh.getRange(payStartRow + 1, 1, 2, 2).setValues([
     ['Cash', cashAmount],
-    ['UPI', upiAmount]
+    ['Bank', bankAmount]
   ]);
 
   sh.autoResizeColumns(1, 3);
@@ -3691,7 +3595,7 @@ function buildDashboardSheet() {
     .setChartType(Charts.ChartType.PIE)
     .addRange(sh.getRange(payStartRow, 1, 3, 2))
     .setPosition(20, 5, 0, 0)
-    .setOption('title', 'Cash vs UPI (Amount Received)')
+    .setOption('title', 'Cash vs Bank (Amount Received)')
     .setOption('colors', ['#FF914D', '#E1341E'])
     .setOption('width', 480)
     .setOption('height', 300)

@@ -1,5 +1,5 @@
 /* =========================================================================
-   KOVAI LAKSHMI GRINDERS - BILLING SYSTEM
+   SJP - BILLING SYSTEM
    Design tokens
    ========================================================================= */
 :root {
@@ -458,15 +458,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md); font-size: 13px; display: none;
 }
 .payment-note.cash { background: var(--accent-soft); color: var(--accent-dark); display: block; }
-.payment-note.upi { background: var(--primary-soft); color: var(--primary-dark); display: block; }
-
-.qr-box { text-align: center; margin-top: 14px; padding: 16px; background: var(--surface);
-  border: 1.5px dashed var(--primary); border-radius: var(--radius-md); display: none; }
-.qr-box.show { display: block; }
-.qr-box img { width: 176px; height: 176px; margin: 0 auto 8px; border-radius: 8px; }
-.qr-status { font-size: 13px; font-weight: 700; }
-.qr-status.pending { color: var(--warn); }
-.qr-status.paid { color: var(--success); }
 
 /* =========================================================================
    BILL PREVIEW (live receipt)

@@ -1277,8 +1277,6 @@ function updatePaymentNote() {
   const method = document.getElementById('f_paymentMethod').value;
   document.getElementById('cashNote').style.display = method === 'Cash' ? 'block' : 'none';
   document.getElementById('bankNote').style.display = method === 'Bank' ? 'block' : 'none';
-  document.getElementById('upiNote').style.display = method === 'UPI' ? 'block' : 'none';
-  document.getElementById('qrBox').classList.remove('show');
   renderPreview();
 }
 
@@ -1336,7 +1334,6 @@ function formatISTDateTime_(val) {
 function paymentMethodLabel(method) {
   if (method === 'Cash') return 'Cash in Hand';
   if (method === 'Bank') return 'Bank Transaction';
-  if (method === 'UPI') return 'UPI / Bank Transaction';
   return method || '-';
 }
 
@@ -1602,13 +1599,7 @@ async function saveBill() {
 
     const badge = document.getElementById('statusBadge');
     badge.style.display = 'inline-block';
-    if (r.paymentStatus === 'Cash Collected') {
-      badge.textContent = 'Cash Collected'; badge.className = 'badge cash';
-      document.getElementById('qrBox').classList.remove('show');
-    } else if (r.paymentStatus === 'Pending') {
-      badge.textContent = 'Payment Pending'; badge.className = 'badge pending';
-      showQr(r);
-    }
+    badge.textContent = 'Cash Collected'; badge.className = 'badge cash';
     toast('Bill ' + r.billId + ' saved!', 'success');
     renderPreview();
     document.getElementById('footBilledBy') && (document.getElementById('footBilledBy').textContent = billerId);
@@ -1654,18 +1645,17 @@ async function resetBillingForm() {
   document.getElementById('f_deliveryAddress').value = '';
   document.getElementById('f_customerId').value = '';
   document.getElementById('custMatchHint').textContent = '';
-  document.getElementById('f_paymentMethod').value = 'UPI';
+  document.getElementById('f_paymentMethod').value = 'Cash';
   document.getElementById('f_billerPassword').value = '';
   document.getElementById('f_totalDiscountPct').value = '';
 
   // clear any red "required field" highlights
   document.querySelectorAll('.field.has-error').forEach(f => f.classList.remove('has-error'));
 
-  // clear status message, badge, and QR box from the previous bill
+  // clear status message and badge from the previous bill
   document.getElementById('billerStatus').textContent = '';
   document.getElementById('billerStatus').className = 'biller-status';
   document.getElementById('statusBadge').style.display = 'none';
-  document.getElementById('qrBox').classList.remove('show');
 
   // fetch a fresh Bill ID for the next bill - also picks up any access
   // changes Super Admin made mid-session (e.g. revoking this biller's
@@ -1692,44 +1682,6 @@ async function resetBillingForm() {
 
 
 
-
-function showQr(r) {
-  const box = document.getElementById('qrBox');
-  box.classList.add('show');
-  document.getElementById('qrImage').src = r.qrImageUrl;
-  document.getElementById('qrAmount').textContent = '₹' + Number(r.totalAmount).toFixed(2);
-  document.getElementById('qrStatus').textContent = '⏳ Waiting for payment...';
-  document.getElementById('qrStatus').className = 'qr-status pending';
-  state.currentQrId = r.billId;
-  startQrPolling(r.billId);
-}
-
-function startQrPolling(billId) {
-  clearInterval(state.qrPollTimer);
-  state.qrPollTimer = setInterval(async () => {
-    const r = await apiGet('getBillStatus', { billId });
-    if (r.ok && r.status === 'Paid') {
-      document.getElementById('qrStatus').textContent = '✅ Payment received!';
-      document.getElementById('qrStatus').className = 'qr-status paid';
-      const badge = document.getElementById('statusBadge');
-      badge.textContent = 'Paid'; badge.className = 'badge paid';
-      clearInterval(state.qrPollTimer);
-      toast('Payment confirmed for ' + billId, 'success');
-    }
-  }, 6000);
-}
-
-document.getElementById('checkPaymentBtn').addEventListener('click', async () => {
-  toast('Checking with Razorpay...', '');
-  const r = await apiGet('getBillStatus', { billId: state.currentQrId });
-  if (r.ok && r.status === 'Paid') {
-    document.getElementById('qrStatus').textContent = '✅ Payment received!';
-    document.getElementById('qrStatus').className = 'qr-status paid';
-    toast('Payment confirmed!', 'success');
-  } else {
-    toast('Still pending. Try again in a moment.', '');
-  }
-});
 
 // -------------------------------------------------------------------------
 // 12. (Download/Print PDF from the Create Bill screen was removed here -
@@ -1950,8 +1902,7 @@ function renderWidgetResult_(key, d) {
     const pal = (state.themeChartPalette && state.themeChartPalette.length) ? state.themeChartPalette : ['#E1341E', '#a8d339', '#AE2314'];
     drawPieChart([
       { label: 'Cash', value: d.cashAmount || 0, color: pal[0] },
-      { label: 'Bank', value: d.bankAmount || 0, color: pal[1] },
-      { label: 'UPI', value: d.upiAmount || 0, color: pal[2] }
+      { label: 'Bank', value: d.bankAmount || 0, color: pal[1] }
     ]);
   }
 }
@@ -2631,7 +2582,6 @@ function renderLookupResult(bill) {
           <div class="field"><label>Email</label><input id="edit_email" type="email" value="${escapeHtml(bill.email || '')}"></div>
           <div class="field"><label>Payment Method</label>
             <select id="edit_paymentMethod">
-              <option value="UPI" ${bill.paymentMethod === 'UPI' ? 'selected' : ''}>UPI</option>
               <option value="Cash" ${bill.paymentMethod === 'Cash' ? 'selected' : ''}>Cash in Hand</option>
               <option value="Bank" ${bill.paymentMethod === 'Bank' ? 'selected' : ''}>Bank Transaction</option>
             </select>
@@ -3271,6 +3221,41 @@ document.getElementById('resetToActiveOnlyBtn') && document.getElementById('rese
   }
 });
 
+// Non-destructive counterpart to Reset above: re-syncs the Invoice/Patient/
+// Product counters to what's actually in the sheet (active spreadsheet +
+// any linked archives) WITHOUT forgetting or unlinking those archives. Use
+// this after hand-editing an id directly in the sheet.
+document.getElementById('refreshNumberingBtn') && document.getElementById('refreshNumberingBtn').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  const creds = getSuperAdminCreds();
+  if (!creds.superAdminUser || !creds.superAdminPass) {
+    toast('Enter your Super Admin username and password above first.', 'error');
+    return;
+  }
+  if (!confirm(
+    'This will re-check the Invoice / Patient / Product numbers against what\'s actually in the spreadsheet ' +
+    '(including any linked archives) and update the next-number counters to match - useful after hand-editing an ' +
+    'id directly in the sheet.\n\nLinked archives are kept exactly as they are - nothing is forgotten or deleted. Continue?'
+  )) return;
+
+  const original = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = 'Refreshing...';
+  try {
+    const r = await apiPost('refreshNumbering', creds);
+    if (!r.ok) { toast(r.error || 'Refresh failed', 'error'); return; }
+    toast(
+      'Numbering refreshed' + (r.archivesScanned ? ' (scanned ' + r.archivesScanned + ' linked archive' + (r.archivesScanned === 1 ? '' : 's') + ')' : '') + '.',
+      'success'
+    );
+    document.getElementById('checkDataStatusBtn').click();
+    checkSpreadsheetCapacity_();
+  } catch (err) {
+    toast('Network error while refreshing numbering.', 'error');
+  } finally {
+    btn.disabled = false; btn.innerHTML = original;
+  }
+});
+
 function getSuperAdminCreds() {
   return {
     superAdminUser: document.getElementById('admin_su_user').value,
@@ -3429,9 +3414,7 @@ document.getElementById('saveSettingsBtn').addEventListener('click', async () =>
     SocialInstagram: document.getElementById('s_socialInstagram').value.trim(),
     SocialFacebook: document.getElementById('s_socialFacebook').value.trim(),
     SocialLinkedIn: document.getElementById('s_socialLinkedin').value.trim(),
-    SocialYouTube: document.getElementById('s_socialYoutube').value.trim(),
-    RazorpayKeyId: document.getElementById('s_rpKeyId').value.trim(),
-    RazorpayKeySecret: document.getElementById('s_rpKeySecret').value.trim()
+    SocialYouTube: document.getElementById('s_socialYoutube').value.trim()
   };
   const r = await apiPost('updateSettings', payload);
   if (r.ok) {

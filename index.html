@@ -153,7 +153,6 @@
               <div class="field span-2">
                 <label>Payment Method</label>
                 <select id="f_paymentMethod">
-                  <option value="UPI">UPI (auto QR generated)</option>
                   <option value="Cash">Cash in Hand</option>
                   <option value="Bank">Bank Transaction</option>
                 </select>
@@ -230,21 +229,10 @@
             <div id="billerStatus" class="biller-status"></div>
 
             <div id="cashNote" class="payment-note cash">
-              &#128181; <b>Cash in Hand</b> selected - no QR code or payment link will be generated for this bill.
+              &#128181; <b>Cash in Hand</b> selected.
             </div>
             <div id="bankNote" class="payment-note cash">
-              &#127974; <b>Bank Transaction</b> selected - no QR code or payment link will be generated for this bill.
-            </div>
-            <div id="upiNote" class="payment-note upi">
-              &#128241; <b>UPI</b> selected - once you confirm with your Biller ID &amp; password, a payment QR for the
-              exact bill amount will be generated automatically below.
-            </div>
-
-            <div id="qrBox" class="qr-box">
-              <img id="qrImage" src="" alt="UPI QR Code">
-              <div>Scan with any UPI app to pay <b id="qrAmount">&#8377;0.00</b></div>
-              <div class="qr-status pending" id="qrStatus">&#9203; Waiting for payment...</div>
-              <button id="checkPaymentBtn" class="btn btn-outline btn-sm" style="margin-top:8px;">Check Payment Status Now</button>
+              &#127974; <b>Bank Transaction</b> selected.
             </div>
           </div>
         </div>
@@ -477,10 +465,10 @@
           <div class="chart-filter" data-key="bb"></div>
         </div>
 
-        <!-- Cash vs UPI (Amount Received) -->
+        <!-- Cash vs Bank (Amount Received) -->
         <div class="dash-card chart-card wide" data-widget="pm">
           <div class="dash-card-main">
-            <h4>Cash vs UPI (Amount Received)</h4>
+            <h4>Cash vs Bank (Amount Received)</h4>
             <div id="paymentPieChart"></div>
           </div>
           <div class="chart-filter" data-key="pm"></div>
@@ -897,14 +885,6 @@
               <label>YouTube URL</label>
               <input id="s_socialYoutube" type="text" placeholder="https://youtube.com/@yourprofile">
             </div>
-            <div class="field">
-              <label>Razorpay Key ID</label>
-              <input id="s_rpKeyId" type="text" placeholder="rzp_live_xxxxx">
-            </div>
-            <div class="field">
-              <label>Razorpay Key Secret</label>
-              <input id="s_rpKeySecret" type="password" placeholder="●●●●●●●●">
-            </div>
           </div>
           <button id="saveSettingsBtn" class="btn btn-primary" style="margin-top:14px;">Save Shop Details</button>
           <button id="refreshDashboardSheetBtn" class="btn btn-outline" style="margin-top:10px;">&#128202; Refresh Dashboard Sheet &amp; Charts</button>
@@ -1042,6 +1022,7 @@
             </div>
             <div class="ds-actions">
               <button type="button" class="btn btn-primary btn-sm" id="addNewDatabaseBtn">&#10133; Add New Database Now</button>
+              <button type="button" class="btn btn-outline btn-sm" id="refreshNumberingBtn">&#128260; Refresh Numbering</button>
               <button type="button" class="btn btn-outline btn-sm ds-danger-btn" id="resetToActiveOnlyBtn">&#9888;&#65039; Reset Numbering &amp; Forget Old Archives</button>
             </div>
             <div id="dbExpandResult" style="display:none;margin-top:12px;font-size:12.5px;color:var(--ink-soft);line-height:1.6;background:var(--bg);border-radius:var(--radius-sm);padding:10px 12px;"></div>
@@ -1049,7 +1030,9 @@
               Invoice, Patient and Product numbers are tracked by this app separately from the spreadsheet
               itself - that's deliberate, it's what lets numbering carry on smoothly across an "Add New Database"
               switch. If you ever edit a spreadsheet directly (clear rows by hand, test "Make a copy"), those
-              numbers won't automatically notice - use Refresh any time something looks off, and Reset to fix it.
+              numbers won't automatically notice - click "Refresh Numbering" to re-sync them from what's
+              actually in the sheet(s) without losing any linked archives, or "Reset Numbering &amp; Forget Old
+              Archives" if you no longer need those archives at all.
               Once a spreadsheet is archived, its invoices become read-only (Find/Edit Bill will show them but
               won't allow changes) - the same principle as not editing a closed financial year's books.
             </p>
