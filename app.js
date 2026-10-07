@@ -14,8 +14,8 @@ const CONFIG = {
 // Bump this whenever you redeploy app.js - printed on load so you can
 // confirm in the browser console (F12) that the page is actually running
 // the file you think it's running, not a cached older copy.
-const FRONTEND_BUILD = 'SJP-2026-09-16-31-LETTERPAD-PRINTFIX';
-const EXPECTED_BACKEND_BUILD = 'SJP-2026-09-16-01-LETTERPAD'; // must match BACKEND_BUILD in Code.gs
+const FRONTEND_BUILD = 'SJP-2026-10-07-34-VALIDATION';
+const EXPECTED_BACKEND_BUILD = 'SJP-2026-10-07-01-VALIDATION'; // must match BACKEND_BUILD in Code.gs
 console.log('SJP billing app.js build', FRONTEND_BUILD);
 
 // Shows a impossible-to-miss banner at the top of the app the moment we can
@@ -121,6 +121,416 @@ function toast(msg, type) {
   setTimeout(() => el.remove(), 4200);
 }
 
+// =========================================================================
+// 3b. INPUT RULES
+//
+// One place that decides what every field in the app may contain. Mirrors
+// section "1c. INPUT RULES" in Code.gs exactly - the browser stops bad input
+// as it's typed/pasted (instant feedback), the server re-checks every save
+// (the guarantee, since a browser can always be bypassed).
+//
+// Three layers, all driven by INPUT_RULES below:
+//   1. While typing/pasting - disallowed characters simply never appear
+//      (letters in a phone number, digits in a name, "e" or "-" in a price).
+//   2. On leaving a field - spaces tidied, numbers clamped into range.
+//   3. On Save - full check with a clear message right under the field.
+//
+// Nothing here rewrites stored data. Older values are only ever tidied when
+// a person opens and saves that exact record again.
+// =========================================================================
+const VR = {
+  PERSON_NAME: /^[\p{L}\p{M}][\p{L}\p{M} .'\-]*$/u,
+  PRODUCT_NAME: /^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N} ()\-\/.,&+'%#:]*$/u,
+  ADDRESS: /^[\p{L}\p{M}\p{N} \n,.\-\/#():'&]*$/u,
+  ORG_NAME: /^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N} .,&'()\-]*$/u,
+  EMAIL: /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}$/,
+  GSTIN: /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/,
+  IFSC: /^[A-Z]{4}0[A-Z0-9]{6}$/,
+  ACCOUNT_NO: /^\d{9,18}$/,
+  WEBSITE: /^(https?:\/\/)?[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+(\/[^\s<>"']*)?$/,
+  URL: /^https?:\/\/[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+(:\d+)?(\/[^\s<>"']*)?$/,
+  ADMIN_USER: /^[\p{L}\p{N}][\p{L}\p{N} ._\-@]*$/u
+};
+const VLIMIT = {
+  MONEY_MAX: 10000000, QTY_MAX: 9999, STOCK_MAX: 999999, THRESHOLD_MAX: 99999,
+  ITEMS_MAX: 100, ADDRESS_MAX: 250, NOTE_MAX: 200
+};
+
+// ---- Validators (same names, same behaviour as Code.gs) -----------------
+function vRes_(value, error) { return { value: value, error: error || '' }; }
+function vText_(v) {
+  return String(v == null ? '' : v).replace(/[\u0000-\u0009\u000B-\u001F\u007F​-‍﻿]/g, '');
+}
+function vLine_(v) { return vText_(v).replace(/\s+/g, ' ').trim(); }
+function vMulti_(v) {
+  return vText_(v).split('\n').map(l => l.replace(/\s+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+// "+91 98765 43210", "919876543210" and "09876543210" all mean 9876543210.
+function normalizeMobile_(v) {
+  let d = String(v == null ? '' : v).replace(/\D/g, '');
+  if (d.length === 12 && d.indexOf('91') === 0) d = d.slice(2);
+  else if (d.length === 11 && d.charAt(0) === '0') d = d.slice(1);
+  return d;
+}
+function normalizeShopPhone_(v) {
+  let d = String(v == null ? '' : v).replace(/\D/g, '');
+  if (d.length === 12 && d.indexOf('91') === 0) d = d.slice(2);
+  return d;
+}
+function vMobile_(raw, label, required) {
+  if (!String(raw == null ? '' : raw).trim()) return vRes_('', required ? label + ' is required.' : '');
+  const d = normalizeMobile_(raw);
+  if (!/^[6-9]\d{9}$/.test(d)) return vRes_(d, label + ' must be a 10-digit mobile number starting with 6, 7, 8 or 9.');
+  return vRes_(d);
+}
+function vShopPhone_(raw, label) {
+  if (!String(raw == null ? '' : raw).trim()) return vRes_('');
+  const d = normalizeShopPhone_(raw);
+  if (!/^(\d{10}|0\d{10})$/.test(d)) return vRes_(d, label + ' must be 10 digits (or 11 for a landline starting with 0).');
+  return vRes_(d);
+}
+function vPersonName_(raw, label, required) {
+  const v = vLine_(raw);
+  if (!v) return vRes_(v, required ? label + ' is required.' : '');
+  if (v.length < 2 || v.length > 60) return vRes_(v, label + ' must be 2 to 60 characters.');
+  if (!VR.PERSON_NAME.test(v)) return vRes_(v, label + ' can only contain letters, spaces, dot (.), apostrophe (\') and hyphen (-).');
+  return vRes_(v);
+}
+function vEmail_(raw, label, required) {
+  const v = vLine_(raw).replace(/\s/g, '');
+  if (!v) return vRes_(v, required ? label + ' is required.' : '');
+  if (v.length > 100 || v.indexOf('..') !== -1 || !VR.EMAIL.test(v)) return vRes_(v, label + ' is not a valid email address (e.g. name@example.com).');
+  return vRes_(v);
+}
+function vAddress_(raw, label) {
+  const v = vMulti_(raw);
+  if (!v) return vRes_(v);
+  if (v.length > VLIMIT.ADDRESS_MAX) return vRes_(v, label + ' must be at most ' + VLIMIT.ADDRESS_MAX + ' characters.');
+  if (!VR.ADDRESS.test(v)) return vRes_(v, label + ' can only contain letters, numbers, spaces and , . - / # ( ) : \' &');
+  if (!/[\p{L}\p{N}]/u.test(v)) return vRes_(v, label + ' must contain letters or numbers.');
+  return vRes_(v);
+}
+function vProductName_(raw, label) {
+  const v = vLine_(raw);
+  if (!v) return vRes_(v, label + ' is required.');
+  if (v.length < 2 || v.length > 80) return vRes_(v, label + ' must be 2 to 80 characters.');
+  if (!VR.PRODUCT_NAME.test(v)) return vRes_(v, label + ' must start with a letter or number and can only use letters, numbers, spaces and ( ) - / . , & + \' % # :');
+  return vRes_(v);
+}
+function vFreeText_(raw, label, maxLen, required, minLen) {
+  const v = vLine_(raw).replace(/[<>]/g, '');
+  if (!v) return vRes_(v, required ? label + ' is required.' : '');
+  if (minLen && v.length < minLen) return vRes_(v, label + ' must be at least ' + minLen + ' characters.');
+  if (v.length > maxLen) return vRes_(v, label + ' must be at most ' + maxLen + ' characters.');
+  return vRes_(v);
+}
+function vPattern_(raw, label, re, maxLen, hint, transform) {
+  let v = vLine_(raw);
+  if (transform) v = transform(v);
+  if (!v) return vRes_(v);
+  if (v.length > maxLen || !re.test(v)) return vRes_(v, label + ' ' + hint);
+  return vRes_(v);
+}
+function vUrl_(raw, label) {
+  let v = vLine_(raw).replace(/\s/g, '');
+  if (!v) return vRes_(v);
+  if (!/^https?:\/\//i.test(v)) v = 'https://' + v;
+  if (v.length > 300 || !VR.URL.test(v)) return vRes_(v, label + ' is not a valid link (e.g. https://example.com/page).');
+  return vRes_(v);
+}
+function vNumber_(raw, label, opts) {
+  opts = opts || {};
+  const min = opts.min != null ? opts.min : 0;
+  const max = opts.max != null ? opts.max : VLIMIT.MONEY_MAX;
+  if (raw === '' || raw == null) {
+    if (opts.required) return vRes_(null, label + ' is required.');
+    return vRes_(opts.blank !== undefined ? opts.blank : 0);
+  }
+  const s = String(raw).trim();
+  if (!/^-?\d+(\.\d+)?$/.test(s) && typeof raw !== 'number') return vRes_(null, label + ' must be a number.');
+  const n = Number(raw);
+  if (!isFinite(n)) return vRes_(null, label + ' must be a number.');
+  if (opts.integer && Math.floor(n) !== n) return vRes_(null, label + ' must be a whole number.');
+  if (n < min) return vRes_(null, label + ' cannot be less than ' + min + '.');
+  if (n > max) return vRes_(null, label + ' cannot be more than ' + max + '.');
+  return vRes_(opts.integer ? n : Math.round(n * 100) / 100);
+}
+function vMoney_(raw, label, required) { return vNumber_(raw, label, { min: 0, max: VLIMIT.MONEY_MAX, required: required }); }
+function vPercent_(raw, label) { return vNumber_(raw, label, { min: 0, max: 100 }); }
+function vInt_(raw, label, min, max, required, blank) {
+  return vNumber_(raw, label, { min: min, max: max, integer: true, required: required, blank: blank });
+}
+function vPassword_(raw, label, minLen, required) {
+  const v = String(raw == null ? '' : raw);
+  if (!v) return vRes_(v, required ? label + ' is required.' : '');
+  if (/\s/.test(v)) return vRes_(v, label + ' cannot contain spaces.');
+  if (v.length < minLen || v.length > 30) return vRes_(v, label + ' must be ' + minLen + ' to 30 characters.');
+  return vRes_(v);
+}
+function vDate_(raw, label) {
+  const v = String(raw == null ? '' : raw).trim();
+  if (!v) return vRes_(v, label + ' is required.');
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  if (!d || d.getFullYear() !== Number(m[1]) || d.getMonth() !== Number(m[2]) - 1 || d.getDate() !== Number(m[3])) {
+    return vRes_(v, label + ' must be a valid date.');
+  }
+  if (v < '2000-01-01') return vRes_(v, label + ' is too far in the past.');
+  if (v > todayLocalStr_()) return vRes_(v, label + ' cannot be in the future.');
+  return vRes_(v);
+}
+// "12", "sjp12", "SJP-12" -> "SJP-000012", so a Bill ID can be found however it's typed.
+function normalizeBillId_(raw) {
+  const v = String(raw == null ? '' : raw).toUpperCase().replace(/\s/g, '');
+  const m = v.match(/^(?:SJP-?)?(\d{1,9})$/);
+  return m ? 'SJP-' + String(Number(m[1])).padStart(6, '0') : v;
+}
+// WhatsApp needs the country code - a bare 10-digit Indian number gets 91.
+function waNumber_(v) {
+  const d = String(v == null ? '' : v).replace(/\D/g, '');
+  return d.length === 10 ? '91' + d : d;
+}
+
+// ---- Typing filters: what each kind of field lets through as you type ----
+const TYPE_FILTERS_ = {
+  mobile: v => { let d = v.replace(/\D/g, ''); if (d.length > 10) d = normalizeMobile_(d).slice(0, 10); return d; },
+  shopPhone: v => normalizeShopPhone_(v).slice(0, 11),
+  whatsappIntl: v => v.replace(/\D/g, '').slice(0, 15),
+  digits: v => v.replace(/\D/g, ''),
+  personName: v => v.replace(/[^\p{L}\p{M} .'\-]/gu, '').replace(/^[ .'\-]+/u, '').replace(/ {2,}/g, ' '),
+  productName: v => v.replace(/[^\p{L}\p{M}\p{N} ()\-\/.,&+'%#:]/gu, '').replace(/^[^\p{L}\p{M}\p{N}]+/u, '').replace(/ {2,}/g, ' '),
+  orgName: v => v.replace(/[^\p{L}\p{M}\p{N} .,&'()\-]/gu, '').replace(/^[^\p{L}\p{M}\p{N}]+/u, '').replace(/ {2,}/g, ' '),
+  address: v => v.replace(/[^\p{L}\p{M}\p{N} \n,.\-\/#():'&]/gu, '').replace(/[ \t]{2,}/g, ' '),
+  email: v => v.replace(/[^A-Za-z0-9._%+\-@]/g, ''),
+  noSpace: v => v.replace(/\s/g, ''),
+  upperAlnum: v => v.toUpperCase().replace(/[^A-Z0-9]/g, ''),
+  billId: v => v.toUpperCase().replace(/[^A-Z0-9\-]/g, ''),
+  adminUser: v => v.replace(/[^\p{L}\p{N} ._\-@]/gu, '').replace(/^[^\p{L}\p{N}]+/u, ''),
+  freeText: v => v.replace(/[<>]/g, '')
+};
+const DIGIT_FILTERS_ = ['mobile', 'shopPhone', 'whatsappIntl', 'digits'];
+
+// selector -> rule. `filter` = typing filter above, `max` = max length,
+// `num` = numeric field { decimals, min, max }, plus keyboard hints for phones.
+const INPUT_RULES = [
+  // Patient (Create Bill + Find/Edit)
+  ['#f_customerName, #edit_customerName', { filter: 'personName', max: 60, autocomplete: 'off' }],
+  ['#f_phone, #edit_phone', { filter: 'mobile', inputmode: 'numeric', autocomplete: 'off' }],
+  ['#f_email, #edit_email, #share_email, #s_companyEmail', { filter: 'email', max: 100, inputmode: 'email' }],
+  ['#f_address, #f_deliveryAddress, #edit_address, #edit_deliveryAddress, #s_address', { filter: 'address', max: VLIMIT.ADDRESS_MAX, multiline: true }],
+  ['#edit_note', { filter: 'freeText', max: VLIMIT.NOTE_MAX }],
+  // Line items
+  ['.row-product-input, .erow-name, #np_name, .pt-name', { filter: 'productName', max: 80 }],
+  ['.row-price, .erow-price, #np_price, .pt-price', { num: { decimals: 2, min: 0, max: VLIMIT.MONEY_MAX } }],
+  ['.row-qty, .erow-qty', { num: { decimals: 0, min: 1, max: VLIMIT.QTY_MAX } }],
+  ['.row-discount, .erow-discount, #f_totalDiscountPct, #edit_totalDiscountPct, #s_cgst, #s_sgst', { num: { decimals: 2, min: 0, max: 100 } }],
+  // Inventory
+  ['#np_stock, .inv-stock-input', { num: { decimals: 0, min: 0, max: VLIMIT.STOCK_MAX } }],
+  ['.inv-threshold-input', { num: { decimals: 0, min: 0, max: VLIMIT.THRESHOLD_MAX } }],
+  // Sharing / lookup
+  ['#share_phone', { filter: 'whatsappIntl', inputmode: 'numeric' }],
+  ['#lookupBillId', { filter: 'billId', max: 20, autocomplete: 'off' }],
+  // Admin - billers & login
+  ['#bm_name', { filter: 'personName', max: 60 }],
+  ['#bm_password, #acc_newPass, #acc_confirmPass', { filter: 'noSpace', max: 30 }],
+  ['#acc_newUser', { filter: 'adminUser', max: 40 }],
+  ['#loginUser, #loginPass, #admin_su_user, #admin_su_pass, #inv_su_user, #inv_su_pass, #edit_su_user, #edit_su_pass', { max: 60 }],
+  // Admin - shop / invoice settings
+  ['#s_companyName', { filter: 'freeText', max: 80 }],
+  ['#s_phone', { filter: 'shopPhone', inputmode: 'numeric' }],
+  ['#s_socialWhatsapp', { filter: 'mobile', inputmode: 'numeric' }],
+  ['#s_website', { filter: 'noSpace', max: 100, inputmode: 'url' }],
+  ['#s_logo, #s_printLogo, #s_socialInstagram, #s_socialFacebook, #s_socialLinkedin, #s_socialYoutube', { filter: 'noSpace', max: 300, inputmode: 'url' }],
+  ['#s_gst', { filter: 'upperAlnum', max: 15 }],
+  ['#s_bankIFSC', { filter: 'upperAlnum', max: 11 }],
+  ['#s_bankAccountNo', { filter: 'digits', max: 18, inputmode: 'numeric' }],
+  ['#s_bankName', { filter: 'orgName', max: 60 }],
+  ['#s_bankAccountHolder', { filter: 'orgName', max: 80 }],
+  ['#s_signatoryLabel', { filter: 'freeText', max: 40 }],
+  // Dashboard chart builder / theme
+  ['#cb_name', { filter: 'freeText', max: 60 }],
+  ['#cb_topN', { num: { decimals: 0, min: 0, max: 100 } }],
+  ['#theme_billLogoWidth, #theme_billLogoHeight', { num: { decimals: 0, min: 20, max: 400 } }]
+];
+
+function ruleFor_(el) {
+  if (!el || !el.matches) return null;
+  for (let i = 0; i < INPUT_RULES.length; i++) {
+    if (el.matches(INPUT_RULES[i][0])) return INPUT_RULES[i][1];
+  }
+  return null;
+}
+
+// Adds keyboard hints (numeric keypad on phones, length caps) to every
+// matching field under `root`. Called once at load and again whenever rows
+// are drawn on the fly (bill lines, Find/Edit form, inventory, products).
+// Phone fields deliberately get NO maxlength attribute: the browser would
+// chop a pasted "+91 98765 43210" to "+91 98765 " BEFORE the filter could
+// turn it into the right 10 digits.
+function decorateInputs_(root) {
+  (root || document).querySelectorAll('input, textarea').forEach(el => {
+    const rule = ruleFor_(el);
+    if (!rule || el.dataset.ruled) return;
+    el.dataset.ruled = '1';
+    if (rule.inputmode) el.setAttribute('inputmode', rule.inputmode);
+    if (rule.autocomplete) el.setAttribute('autocomplete', rule.autocomplete);
+    if (rule.max && !(rule.filter && DIGIT_FILTERS_.indexOf(rule.filter) !== -1 && rule.filter !== 'digits')) el.setAttribute('maxlength', rule.max);
+    if (rule.num) {
+      el.setAttribute('min', rule.num.min);
+      el.setAttribute('max', rule.num.max);
+      el.setAttribute('step', rule.num.decimals ? '0.01' : '1');
+      el.setAttribute('inputmode', rule.num.decimals ? 'decimal' : 'numeric');
+    }
+  });
+}
+
+// Layer 1a - block keys that can never be valid, before they appear.
+document.addEventListener('keydown', e => {
+  const rule = ruleFor_(e.target);
+  if (!rule || e.ctrlKey || e.metaKey || e.altKey || !e.key || e.key.length !== 1) return;
+  if (rule.num) {
+    if (/[eE+\-]/.test(e.key) || (!rule.num.decimals && /[.,]/.test(e.key))) e.preventDefault();
+  } else if (rule.filter && DIGIT_FILTERS_.indexOf(rule.filter) !== -1 && !/\d/.test(e.key)) {
+    e.preventDefault();
+  }
+}, true);
+
+// Mobile keyboards often skip keydown, so the same block runs on beforeinput.
+document.addEventListener('beforeinput', e => {
+  const rule = ruleFor_(e.target);
+  if (!rule || !rule.num || typeof e.data !== 'string') return;
+  if (/[eE+\-]/.test(e.data) || (!rule.num.decimals && /[.,]/.test(e.data))) e.preventDefault();
+}, true);
+
+// Layer 1b - filter whatever got through (paste, autofill, drag-drop).
+// Registered in the CAPTURE phase so it runs BEFORE each field's own input
+// listeners - totals, preview and stock badges always see the clean value.
+document.addEventListener('input', e => {
+  const el = e.target;
+  clearFieldError_(el); // any edit clears that field's error message
+  const rule = ruleFor_(el);
+  if (!rule) return;
+  if (rule.filter) {
+    const before = el.value;
+    const filter = TYPE_FILTERS_[rule.filter];
+    let after = filter(before);
+    if (rule.max && after.length > rule.max) after = after.slice(0, rule.max);
+    if (after !== before) {
+      // Keep the caret where the person was typing, not at the end.
+      let caret = null;
+      try { caret = el.selectionStart; } catch (err) { caret = null; }
+      el.value = after;
+      if (caret != null) {
+        const pos = Math.min(filter(before.slice(0, caret)).length, after.length);
+        try { el.setSelectionRange(pos, pos); } catch (err) { /* not a text field */ }
+      }
+    }
+  } else if (rule.num && el.value !== '') {
+    // An in-progress value ("12.") reads as '' on a number field and is left
+    // alone; only complete numbers are corrected.
+    const n = Number(el.value);
+    if (!isFinite(n)) return;
+    let fixed = el.value;
+    if (n > rule.num.max) fixed = String(rule.num.max);
+    else if (n < 0) fixed = String(Math.abs(n));
+    else if (rule.num.decimals === 0 && /\./.test(fixed)) fixed = String(Math.trunc(n));
+    else if (rule.num.decimals) fixed = fixed.replace(new RegExp('(\\.\\d{' + rule.num.decimals + '})\\d+$'), '$1');
+    if (fixed !== el.value) el.value = fixed;
+  }
+}, true);
+
+// Date pickers and dropdowns report changes via "change", not "input".
+document.addEventListener('change', e => clearFieldError_(e.target), true);
+
+// Layer 2 - tidy up when leaving a field (spaces, out-of-range numbers).
+document.addEventListener('focusout', e => {
+  const el = e.target;
+  const rule = ruleFor_(el);
+  if (!rule) return;
+  const before = el.value;
+  let after = before;
+  if (rule.num) {
+    if (before !== '' && isFinite(Number(before))) {
+      const n = Number(before);
+      if (n < rule.num.min) after = String(rule.num.min);
+      else if (n > rule.num.max) after = String(rule.num.max);
+    }
+  } else if (rule.filter && rule.filter !== 'noSpace' && DIGIT_FILTERS_.indexOf(rule.filter) === -1) {
+    after = rule.multiline ? vMulti_(before) : vLine_(before);
+  }
+  if (after !== before) {
+    el.value = after;
+    el.dispatchEvent(new Event('input', { bubbles: true })); // let totals / preview refresh
+  }
+}, true);
+
+// ---- Inline errors (Layer 3) --------------------------------------------
+// Uses the field's existing ".field-error" line if it has one, otherwise
+// adds one under the field. Inputs that aren't inside a .field (bill line
+// cells, inventory cells) get a red outline and the message as a tooltip.
+function setFieldError_(el, msg) {
+  if (!el) return;
+  const field = el.closest('.field');
+  if (field) {
+    let err = field.querySelector(':scope > .field-error');
+    if (!err) {
+      err = document.createElement('div');
+      err.className = 'field-error';
+      err.dataset.dynamic = '1';
+      field.appendChild(err);
+    }
+    err.textContent = msg;
+    field.classList.add('has-error');
+  }
+  el.classList.add('input-invalid');
+  el.setAttribute('aria-invalid', 'true');
+  el.title = msg;
+}
+function clearFieldError_(el) {
+  if (!el || !el.classList || !el.classList.contains('input-invalid')) {
+    const field0 = el && el.closest ? el.closest('.field.has-error') : null;
+    if (field0) field0.classList.remove('has-error');
+    return;
+  }
+  el.classList.remove('input-invalid');
+  el.removeAttribute('aria-invalid');
+  el.title = '';
+  const field = el.closest('.field');
+  if (field) field.classList.remove('has-error');
+}
+function clearErrorsIn_(root) {
+  (root || document).querySelectorAll('.input-invalid').forEach(clearFieldError_);
+  (root || document).querySelectorAll('.field.has-error').forEach(f => f.classList.remove('has-error'));
+}
+// Runs a list of [elementOrId, result] checks; marks EVERY failing field (so
+// the person sees all problems at once), focuses the first, and returns
+// { ok, values, firstError }.
+function applyChecks_(checks) {
+  const values = {};
+  let firstEl = null, firstError = '';
+  checks.forEach(([target, res, key]) => {
+    const el = typeof target === 'string' ? document.getElementById(target) : target;
+    if (res.error) {
+      setFieldError_(el, res.error);
+      if (!firstEl) { firstEl = el; firstError = res.error; }
+    } else if (key) {
+      values[key] = res.value;
+    }
+  });
+  if (firstEl) {
+    try { firstEl.focus({ preventScroll: true }); firstEl.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) { /* ignore */ }
+  }
+  return { ok: !firstEl, values: values, firstError: firstError };
+}
+
+// A one-time token per bill form, so a Save that's retried after a dropped
+// connection can never create the same bill twice (see apiSaveBill).
+function newSaveToken_() {
+  try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (err) { /* fall through */ }
+  return 'st-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+}
+let billSaveToken_ = newSaveToken_();
+
 // -------------------------------------------------------------------------
 // 4. LOGIN
 // -------------------------------------------------------------------------
@@ -223,7 +633,7 @@ async function bootstrapApp() {
     styleFieldLabelHints_();
     populateBillerDropdown();
     document.getElementById('f_billId').value = r.nextBillId;
-    document.getElementById('f_date').value = todayLocalStr_();
+    setBillDateToday_();
     addProductRow();
     loadSessionRole_();
     syncBillerPermissionsFromRoster_();
@@ -250,11 +660,13 @@ function applySettingsToUI() {
   const printLogoEl = document.getElementById('s_printLogo');
   if (printLogoEl) printLogoEl.value = s.PrintLogoURL || '';
   document.getElementById('s_companyName').value = s.CompanyName || '';
-  document.getElementById('s_phone').value = s.Phone || '';
+  // Phones are shown as plain digits (the same form they'll be saved in) -
+  // an older "+91 96294 95946" displays as 9629495946.
+  document.getElementById('s_phone').value = normalizeShopPhone_(s.Phone || '');
   document.getElementById('s_address').value = s.Address || '';
   document.getElementById('s_website').value = s.Website || '';
   document.getElementById('s_gst').value = s.GSTNumber || '';
-  document.getElementById('s_socialWhatsapp').value = s.SocialWhatsApp || '';
+  document.getElementById('s_socialWhatsapp').value = normalizeMobile_(s.SocialWhatsApp || '');
   document.getElementById('s_socialInstagram').value = s.SocialInstagram || '';
   document.getElementById('s_socialFacebook').value = s.SocialFacebook || '';
   document.getElementById('s_socialLinkedin').value = s.SocialLinkedIn || '';
@@ -1032,6 +1444,7 @@ function addProductRow() {
     <button class="remove-row" title="Remove">✕</button>
   `;
   document.getElementById('productRows').appendChild(wrap);
+  decorateInputs_(wrap);
 
   const nameInput = wrap.querySelector('.row-product-input');
   const dropdown = wrap.querySelector('.row-product-dropdown');
@@ -1048,14 +1461,18 @@ function addProductRow() {
 
   function openDropdown(query) {
     const q = query.trim().toLowerCase();
-    const matches = state.products.filter(p => p.name.toLowerCase().includes(q));
+    // Only ACTIVE services are offered while billing. (state.products can
+    // also hold inactive ones once Inventory/Admin has loaded the full list.)
+    const matches = state.products.filter(p => p.active !== false && String(p.name).toLowerCase().includes(q));
     let html = '';
 
     if (!q) {
       html = matches.map(p => `<div class="dropdown-item" data-name="${escapeHtml(p.name)}" data-price="${p.defaultPrice}">${escapeHtml(p.name)}</div>`).join('');
     } else {
       html = matches.map(p => `<div class="dropdown-item" data-name="${escapeHtml(p.name)}" data-price="${p.defaultPrice}">${escapeHtml(p.name)}</div>`).join('');
-      const exactMatch = matches.some(p => p.name.toLowerCase() === q);
+      // Compared against ALL products, so an inactive one is never offered
+      // to be "added" again as a duplicate.
+      const exactMatch = state.products.some(p => String(p.name).trim().toLowerCase() === q);
       if (!exactMatch) {
         html += `<div class="dropdown-item add-new" data-newname="${escapeHtml(query.trim())}">+ Add "${escapeHtml(query.trim())}" to product list</div>`;
       }
@@ -1079,7 +1496,9 @@ function addProductRow() {
     if (!item) return;
 
     if (item.classList.contains('add-new')) {
-      const newName = item.dataset.newname;
+      const check = vProductName_(item.dataset.newname, 'Service/Treatment name');
+      if (check.error) { setFieldError_(nameInput, check.error); toast(check.error, 'error'); closeDropdown(); return; }
+      const newName = check.value;
       const r = await apiPost('addProduct', { name: newName, defaultPrice: 0 });
       if (r.ok) {
         state.products.push({ id: r.productId, name: newName, defaultPrice: 0, active: true, stock: null, lowStockThreshold: 5 });
@@ -1186,12 +1605,19 @@ function refreshAllStockBadges() {
 }
 
 document.getElementById('newProductBtn').addEventListener('click', async () => {
-  const name = prompt('New product name:');
-  if (!name) return;
-  const price = prompt('Default price for "' + name + '" (₹):', '0');
-  const r = await apiPost('addProduct', { name, defaultPrice: Number(price) || 0 });
+  const rawName = prompt('New service/treatment name:');
+  if (rawName === null || !rawName.trim()) return;
+  const nameCheck = vProductName_(rawName, 'Service/Treatment name');
+  if (nameCheck.error) { toast(nameCheck.error, 'error'); return; }
+  const name = nameCheck.value;
+  if (findProductByName_(name)) { toast('"' + name + '" is already in the list.', 'error'); return; }
+  const rawPrice = prompt('Default price for "' + name + '" (₹):', '0');
+  if (rawPrice === null) return;
+  const priceCheck = vMoney_(String(rawPrice).trim().replace(/[₹,\s]/g, ''), 'Default price', false);
+  if (priceCheck.error) { toast(priceCheck.error, 'error'); return; }
+  const r = await apiPost('addProduct', { name, defaultPrice: priceCheck.value });
   if (r.ok) {
-    state.products.push({ id: r.productId, name, defaultPrice: Number(price) || 0, active: true });
+    state.products.push({ id: r.productId, name, defaultPrice: priceCheck.value, active: true, stock: null, lowStockThreshold: 5 });
     toast('Product added to the permanent list', 'success');
   } else {
     toast(r.error || 'Failed to add product', 'error');
@@ -1238,6 +1664,8 @@ document.getElementById('f_totalDiscountPct') && document.getElementById('f_tota
 // 8. PATIENT AUTO-MATCH
 // -------------------------------------------------------------------------
 let custLookupTimer = null;
+let lastCustLookupKey_ = '';
+let matchedPhone_ = '';
 ['f_phone', 'f_customerName'].forEach(id => {
   document.getElementById(id).addEventListener('blur', () => {
     clearTimeout(custLookupTimer);
@@ -1245,28 +1673,65 @@ let custLookupTimer = null;
   });
 });
 
+// The moment the phone number stops being the one that was matched, the
+// auto-filled Patient ID no longer belongs to this person - clear it, so a
+// bill can never be saved against the previous patient's ID.
+document.getElementById('f_phone').addEventListener('input', () => {
+  const idEl = document.getElementById('f_customerId');
+  if (idEl.value && normalizeMobile_(document.getElementById('f_phone').value) !== matchedPhone_) {
+    idEl.value = '';
+    matchedPhone_ = '';
+    lastCustLookupKey_ = '';
+    document.getElementById('custMatchHint').textContent = '';
+    renderPreview();
+  }
+});
+
+function currentCustLookupKey_() {
+  const phone = normalizeMobile_(document.getElementById('f_phone').value);
+  const name = vLine_(document.getElementById('f_customerName').value).toLowerCase();
+  return phone ? 'p:' + phone : (name ? 'n:' + name : '');
+}
+
 async function tryMatchCustomer() {
-  const phone = document.getElementById('f_phone').value.trim();
-  const name = document.getElementById('f_customerName').value.trim();
-  if (!phone && !name) return;
+  const phoneRaw = document.getElementById('f_phone').value.trim();
+  const phone = normalizeMobile_(phoneRaw);
+  const name = vLine_(document.getElementById('f_customerName').value);
+  // A half-typed phone number can never match anyone - looking it up used
+  // to announce "New patient" and wipe a correct match. Wait until it's a
+  // complete, valid mobile number.
+  if (phoneRaw && !/^[6-9]\d{9}$/.test(phone)) return;
+  if (!phone && name.length < 2) return;
+  const key = currentCustLookupKey_();
+  // Leaving the name field after the phone already matched used to fire the
+  // exact same lookup a second time - skip a repeat of the last lookup.
+  if (key === lastCustLookupKey_) return;
+  lastCustLookupKey_ = key;
   const hint = document.getElementById('custMatchHint');
   try {
     const r = await apiGet('findCustomer', { phone, name });
+    // The person may have kept typing while this was in flight - an answer
+    // for an older phone/name must not overwrite the current form.
+    if (currentCustLookupKey_() !== key) return;
     if (r.ok && r.found) {
       const c = r.customer;
       document.getElementById('f_customerId').value = c.customerId;
+      matchedPhone_ = normalizeMobile_(c.phone) || phone;
       document.getElementById('f_email').value = c.email || document.getElementById('f_email').value;
       document.getElementById('f_address').value = c.address || document.getElementById('f_address').value;
       document.getElementById('f_deliveryAddress').value = c.deliveryAddress || document.getElementById('f_deliveryAddress').value;
       hint.textContent = 'Existing patient matched and auto-filled.';
       hint.style.color = 'var(--success)';
-    } else {
+    } else if (r.ok) {
       document.getElementById('f_customerId').value = '';
+      matchedPhone_ = '';
       hint.textContent = 'New patient - a Patient ID will be created on save.';
       hint.style.color = 'var(--muted)';
+    } else {
+      lastCustLookupKey_ = ''; // let the next blur try again
     }
     renderPreview();
-  } catch (e) { /* silent */ }
+  } catch (e) { lastCustLookupKey_ = ''; /* silent - next blur retries */ }
 }
 
 // -------------------------------------------------------------------------
@@ -1372,7 +1837,7 @@ function buildCompanyHeadHtml(s, billId) {
     return `
     <div class="bill-head bill-head-stacked">
       <div class="bill-head-top">
-        <img class="bill-logo" src="${printLogo}" alt="logo">
+        <img class="bill-logo" src="${escapeHtml(printLogo)}" alt="logo">
         <div class="bill-tag">
           <div class="bill-tag-label">Invoice</div>
           <div class="big">${escapeHtml(String(billId))}</div>
@@ -1384,7 +1849,7 @@ function buildCompanyHeadHtml(s, billId) {
 
   return `
     <div class="bill-head">
-      <img class="bill-logo" src="${printLogo}" alt="logo">
+      <img class="bill-logo" src="${escapeHtml(printLogo)}" alt="logo">
       <div class="bill-head-info">${nameInfoHtml}</div>
       <div class="bill-tag">
         <div class="bill-tag-label">Invoice</div>
@@ -1502,27 +1967,67 @@ function applyLocalStockDeduction_(items) {
   });
 }
 
+// Full check of the Create Bill form. Marks every problem field at once and
+// returns the cleaned values that actually get sent (trimmed, phone reduced
+// to 10 digits, etc.) - the server re-checks the same rules on its side.
 function validateBillForm() {
-  let ok = true;
-  const req = [
-    ['f_date', document.getElementById('f_date').value],
-    ['f_customerName', document.getElementById('f_customerName').value.trim()],
-    ['f_phone', document.getElementById('f_phone').value.trim()]
+  clearErrorsIn_(document.getElementById('view-billing'));
+  const discountsOn = document.getElementById('f_showDiscountToggle').classList.contains('on');
+  const checks = [
+    ['f_date', vDate_(document.getElementById('f_date').value, 'Date'), 'date'],
+    ['f_customerName', vPersonName_(document.getElementById('f_customerName').value, 'Patient Name', true), 'customerName'],
+    ['f_phone', vMobile_(document.getElementById('f_phone').value, 'Phone Number', true), 'phone'],
+    ['f_email', vEmail_(document.getElementById('f_email').value, 'Email', false), 'email'],
+    ['f_address', vAddress_(document.getElementById('f_address').value, 'Address'), 'address'],
+    ['f_deliveryAddress', vAddress_(document.getElementById('f_deliveryAddress').value, 'Delivery Address'), 'deliveryAddress']
   ];
-  req.forEach(([id, val]) => {
-    const field = document.getElementById(id).closest('.field');
-    if (!val) { field.classList.add('has-error'); ok = false; }
-    else field.classList.remove('has-error');
+  if (discountsOn) checks.push(['f_totalDiscountPct', vPercent_(document.getElementById('f_totalDiscountPct').value, 'Additional Discount %'), 'discountPercent']);
+
+  // Line items - every filled-in row must be complete and sensible. A row
+  // left completely untouched (no service, price 0) is simply ignored, as
+  // before. A row with a price but no service is flagged instead of being
+  // silently dropped from the bill.
+  const items = [];
+  let n = 0;
+  document.querySelectorAll('#productRows .product-row').forEach(row => {
+    n++;
+    const nameEl = row.querySelector('.row-product-input');
+    const priceEl = row.querySelector('.row-price');
+    const qtyEl = row.querySelector('.row-qty');
+    const discEl = row.querySelector('.row-discount');
+    const nameRaw = vLine_(nameEl.value);
+    const priceRaw = priceEl.value;
+    if (!nameRaw) {
+      if (Number(priceRaw) > 0) checks.push([nameEl, vRes_('', 'Line ' + n + ': choose a service/treatment, or remove this line with ✕.')]);
+      return;
+    }
+    const known = findProductByName_(nameRaw);
+    const nameRes = known ? vRes_(nameRaw) : vProductName_(nameRaw, 'Line ' + n + ' service/treatment');
+    const priceRes = vMoney_(priceRaw, 'Line ' + n + ' price', true);
+    const qtyRes = vInt_(qtyEl.value, 'Line ' + n + ' qty', 1, VLIMIT.QTY_MAX, true);
+    const discRes = discountsOn ? vPercent_(discEl ? discEl.value : 0, 'Line ' + n + ' discount %') : vRes_(0);
+    checks.push([nameEl, nameRes], [priceEl, priceRes], [qtyEl, qtyRes]);
+    if (discountsOn && discEl) checks.push([discEl, discRes]);
+    if (!nameRes.error && !priceRes.error && !qtyRes.error && !discRes.error) {
+      items.push({ name: nameRes.value, price: priceRes.value, qty: qtyRes.value, discountPercent: discRes.value });
+    }
   });
-  if (!getLineItems().length) { toast('Add at least one product line.', 'error'); ok = false; }
-  return ok;
+
+  const result = applyChecks_(checks);
+  if (!result.ok) { toast(result.firstError, 'error'); return null; }
+  if (!items.length) { toast('Add at least one service/treatment line.', 'error'); return null; }
+  if (items.length > VLIMIT.ITEMS_MAX) { toast('A bill can have at most ' + VLIMIT.ITEMS_MAX + ' lines.', 'error'); return null; }
+  result.values.items = items;
+  if (!discountsOn) result.values.discountPercent = 0;
+  return result.values;
 }
 
 async function saveBill() {
   const statusEl = document.getElementById('billerStatus');
   statusEl.textContent = ''; statusEl.className = 'biller-status';
 
-  if (!validateBillForm()) { toast('Please fill in all mandatory fields.', 'error'); return; }
+  const clean = validateBillForm();
+  if (!clean) return;
 
   let billerId, billerPassword;
   if (state.session.role === 'biller') {
@@ -1542,19 +2047,20 @@ async function saveBill() {
   const bankOverride = getToggleOverrideForPreview_('billBankToggleField', 'f_showBankToggle');
 
   const payload = {
-    date: document.getElementById('f_date').value,
+    date: clean.date,
     customerId: document.getElementById('f_customerId').value || '',
-    customerName: document.getElementById('f_customerName').value.trim(),
-    phone: document.getElementById('f_phone').value.trim(),
-    email: document.getElementById('f_email').value.trim(),
-    address: document.getElementById('f_address').value.trim(),
-    deliveryAddress: document.getElementById('f_deliveryAddress').value.trim(),
+    customerName: clean.customerName,
+    phone: clean.phone,
+    email: clean.email,
+    address: clean.address,
+    deliveryAddress: clean.deliveryAddress,
     paymentMethod: document.getElementById('f_paymentMethod').value,
-    items: getLineItems(),
+    items: clean.items,
     billerId, billerPassword,
     taxOverride: taxOverride === undefined ? '' : (taxOverride ? 'TRUE' : 'FALSE'),
     bankOverride: bankOverride === undefined ? '' : (bankOverride ? 'TRUE' : 'FALSE'),
-    discountPercent: getBillLevelDiscountPct_()
+    discountPercent: clean.discountPercent,
+    saveToken: billSaveToken_
   };
 
   // Soft stock-shortage guard: warn (don't silently block) if this bill
@@ -1578,6 +2084,7 @@ async function saveBill() {
       if (r.dbFull) {
         openDbFullModal_({ percentUsed: null });
       } else {
+        markServerFieldError_(r, BILL_FIELD_IDS_);
         toast(r.error || 'Failed to save bill', 'error');
       }
       return;
@@ -1617,12 +2124,17 @@ async function saveBill() {
       items: payload.items,
       totalDiscountPct: payload.discountPercent || 0,
       taxOverride: payload.taxOverride === 'TRUE',
-      paymentMethod: payload.paymentMethod
+      paymentMethod: payload.paymentMethod,
+      phone: payload.phone,
+      email: payload.email
     });
 
     setTimeout(resetBillingForm, 1500);
   } catch (err) {
-    statusEl.textContent = 'Network error while saving.';
+    // Safe to retry: the same saveToken goes with it, so if the first
+    // attempt DID reach the server, the retry returns that same bill
+    // instead of creating a duplicate.
+    statusEl.textContent = 'Could not confirm the save (connection problem). Press Save again - it will not create a duplicate bill.';
     statusEl.className = 'biller-status err';
   } finally {
     btn.disabled = false; btn.textContent = 'Save & Generate Bill';
@@ -1631,6 +2143,18 @@ async function saveBill() {
 
 
 
+
+// Server-side rejections name the field they're about (r.field) - show the
+// message right under that field, the same as a browser-side check would.
+const BILL_FIELD_IDS_ = {
+  date: 'f_date', customerName: 'f_customerName', phone: 'f_phone', email: 'f_email',
+  address: 'f_address', deliveryAddress: 'f_deliveryAddress', discountPercent: 'f_totalDiscountPct'
+};
+function markServerFieldError_(r, idMap) {
+  if (!r || !r.field || !idMap || !idMap[r.field]) return;
+  const el = document.getElementById(idMap[r.field]);
+  if (el) { setFieldError_(el, r.error || 'Please check this field.'); try { el.focus(); } catch (e) { /* ignore */ } }
+}
 
 async function resetBillingForm() {
   // clear all product rows
@@ -1671,7 +2195,10 @@ async function resetBillingForm() {
     }
   } catch (err) { /* keep old bill id shown if this fails */ }
 
-  document.getElementById('f_date').value = todayLocalStr_();
+  setBillDateToday_();
+  billSaveToken_ = newSaveToken_(); // the next bill is a different bill
+  lastCustLookupKey_ = '';
+  clearErrorsIn_(document.getElementById('view-billing'));
   applyRoleToUI(); // also resets Tax/Bank/Discount toggles to their per-bill defaults
   addProductRow();
   recalcTotals();
@@ -1707,6 +2234,16 @@ document.getElementById('refreshDashboardBtn').addEventListener('click', loadDas
 function todayLocalStr_() {
   const p = getISTParts_(new Date());
   return `${p.year}-${p.month}-${p.day}`;
+}
+
+// A bill can be back-dated but never future-dated: the date picker itself
+// stops at today (IST), and the save check enforces the same.
+function setBillDateToday_() {
+  const el = document.getElementById('f_date');
+  const today = todayLocalStr_();
+  el.value = today;
+  el.setAttribute('max', today);
+  el.setAttribute('min', '2000-01-01');
 }
 
 function chartFilterTemplate_(key) {
@@ -1852,43 +2389,60 @@ function wireChartFilter_(key) {
   });
 }
 
-async function fetchAndRenderWidget(key) {
+// Reads one widget's filter panel into the request params the server expects.
+// Returns null if the panel isn't built yet.
+function widgetParams_(key) {
   const byEl = document.getElementById(key + '_filterBy');
-  const valHidden = document.getElementById(key + '_filterValueHidden');
-  const fromEl = document.getElementById(key + '_dateFrom');
-  const toEl = document.getElementById(key + '_dateTo');
-  const clearBtn = document.getElementById(key + '_clearBtn');
-  if (!byEl) return; // panels not yet initialized
-
+  if (!byEl) return null;
   const filterBy = byEl.value;
-  const filterValue = valHidden.value;
-  const dateFrom = fromEl.value;
-  const dateTo = toEl.value;
-
-  const active = !!(dateFrom || dateTo || (filterBy && filterValue));
-  clearBtn.classList.toggle('show', active);
-
+  const filterValue = document.getElementById(key + '_filterValueHidden').value;
+  const dateFrom = document.getElementById(key + '_dateFrom').value;
+  const dateTo = document.getElementById(key + '_dateTo').value;
   const params = {};
   if (dateFrom) params.dateFrom = dateFrom;
   if (dateTo) params.dateTo = dateTo;
   if (filterBy === 'customer' && filterValue) params.customerId = filterValue;
   if (filterBy === 'product' && filterValue) params.product = filterValue;
+  const active = !!(dateFrom || dateTo || (filterBy && filterValue));
+  document.getElementById(key + '_clearBtn').classList.toggle('show', active);
+  return params;
+}
 
-  console.log('[dashboard]', key, 'requesting with params:', params);
+// Each widget remembers its latest request. If filters are changed quickly,
+// an older (slower) answer arriving last can no longer overwrite the newer one.
+const widgetRequestSeq_ = {};
 
-  const card = document.querySelector('.dash-card[data-widget="' + key + '"]');
-  if (card) card.classList.add('loading');
+// Fetches once for a GROUP of widgets that share identical filters, then
+// renders each of them from that single answer.
+async function fetchWidgetGroup_(keys, params) {
+  const seqs = {};
+  keys.forEach(key => {
+    seqs[key] = (widgetRequestSeq_[key] = (widgetRequestSeq_[key] || 0) + 1);
+    const card = document.querySelector('.dash-card[data-widget="' + key + '"]');
+    if (card) card.classList.add('loading');
+  });
+  console.log('[dashboard]', keys.join(','), 'requesting with params:', params);
   try {
     const r = await apiGet('getDashboardData', params);
     if (!r.ok) { toast('Failed to load dashboard data', 'error'); return; }
     checkBackendBuild_(r.serverBuild);
-    console.log('[dashboard]', key, 'server saw:', r.data && r.data.debug, '| mode:', r.data && r.data.mode, '| result:', r.data);
-    renderWidgetResult_(key, r.data);
+    console.log('[dashboard]', keys.join(','), 'server saw:', r.data && r.data.debug, '| mode:', r.data && r.data.mode);
+    keys.forEach(key => { if (widgetRequestSeq_[key] === seqs[key]) renderWidgetResult_(key, r.data); });
   } catch (err) {
     toast('Failed to load dashboard data', 'error');
   } finally {
-    if (card) card.classList.remove('loading');
+    keys.forEach(key => {
+      if (widgetRequestSeq_[key] !== seqs[key]) return; // a newer request owns the spinner now
+      const card = document.querySelector('.dash-card[data-widget="' + key + '"]');
+      if (card) card.classList.remove('loading');
+    });
   }
+}
+
+async function fetchAndRenderWidget(key) {
+  const params = widgetParams_(key);
+  if (!params) return; // panels not yet initialized
+  return fetchWidgetGroup_([key], params);
 }
 
 function renderWidgetResult_(key, d) {
@@ -1911,8 +2465,19 @@ function setKpi(elId, value) {
   document.getElementById(elId).textContent = value;
 }
 
+// Opening the Dashboard used to send SEVEN identical requests at once (one
+// per widget) - each making the server re-read every bill and bill line.
+// Widgets with the same filters (normally all of them) now share ONE
+// request; only a widget with its own filter gets its own.
 function loadDashboard() {
-  DASH_WIDGET_KEYS.forEach(key => fetchAndRenderWidget(key));
+  const groups = {};
+  DASH_WIDGET_KEYS.forEach(key => {
+    const params = widgetParams_(key);
+    if (!params) return;
+    const sig = JSON.stringify(Object.keys(params).sort().map(k => [k, params[k]]));
+    (groups[sig] = groups[sig] || { params: params, keys: [] }).keys.push(key);
+  });
+  Object.keys(groups).forEach(sig => fetchWidgetGroup_(groups[sig].keys, groups[sig].params));
   loadCustomCharts();
 }
 
@@ -1939,7 +2504,7 @@ function drawBarChart(items) {
         <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="${color}"></rect>
         <text x="${x + barW / 2}" y="${y - 8}" text-anchor="middle" font-size="12" font-weight="700" fill="#182322">${it.qty}</text>
         <text x="${x + barW / 2}" y="${chartH - 6}" text-anchor="middle" font-size="10" fill="#8A9A96">₹${Math.round(it.amount)}</text>
-        <text x="${labelX}" y="${labelY}" text-anchor="start" transform="rotate(90 ${labelX} ${labelY})" font-size="10" fill="#4B5A57">${truncate(it.name, 18)}</text>
+        <text x="${labelX}" y="${labelY}" text-anchor="start" transform="rotate(90 ${labelX} ${labelY})" font-size="10" fill="#4B5A57">${escapeHtml(truncate(String(it.name), 18))}</text>
       </g>`;
   });
   container.innerHTML = `<svg viewBox="0 0 ${width} ${chartH + labelSpace}" width="100%" style="max-width:${width}px; overflow:visible;">${bars}</svg>`;
@@ -1969,7 +2534,7 @@ function drawPieChart(items) {
   const legend = items.map(it =>
     `<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:4px;">
       <span style="width:10px;height:10px;border-radius:3px;background:${it.color};display:inline-block;"></span>
-      ${it.label}: ₹${it.value.toLocaleString('en-IN', { maximumFractionDigits: 0 })} (${Math.round(it.value / total * 100)}%)
+      ${escapeHtml(it.label)}: ₹${it.value.toLocaleString('en-IN', { maximumFractionDigits: 0 })} (${Math.round(it.value / total * 100)}%)
     </div>`).join('');
   container.innerHTML = `
     <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
@@ -2005,7 +2570,7 @@ function drawDonutChart(items) {
   const legend = withColor.map(it =>
     `<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:4px;">
       <span style="width:10px;height:10px;border-radius:3px;background:${it.color};display:inline-block;"></span>
-      ${it.label}: ₹${it.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })} - ${it.value} bill${it.value === 1 ? '' : 's'} (${Math.round(it.value / total * 100)}%)
+      ${escapeHtml(it.label)}: ₹${it.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })} - ${it.value} bill${it.value === 1 ? '' : 's'} (${Math.round(it.value / total * 100)}%)
     </div>`).join('');
   container.innerHTML = `
     <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
@@ -2099,7 +2664,8 @@ function drawGenericPieOrDonut_(container, labels, values, isDonut, isMoney) {
 }
 
 function drawNumberCard_(container, total, isMoney, color) {
-  container.innerHTML = `<div style="font-size:38px;font-weight:800;color:${color || 'var(--primary)'};line-height:1.2;">${formatChartNumber_(total, isMoney)}</div>`;
+  const safeColor = /^#[0-9A-Fa-f]{6}$/.test(String(color || '')) ? color : 'var(--primary)';
+  container.innerHTML = `<div style="font-size:38px;font-weight:800;color:${safeColor};line-height:1.2;">${formatChartNumber_(total, isMoney)}</div>`;
 }
 
 async function loadCustomCharts() {
@@ -2311,6 +2877,7 @@ function openChartBuilder_(existing) {
   const colorEl = document.getElementById('cb_color');
   if (colorEl) colorEl.value = (existing && existing.color) || (state.themeChartPalette && state.themeChartPalette[0]) || '#E1341E';
   document.getElementById('chartBuilderStatus').textContent = '';
+  clearErrorsIn_(document.getElementById('chartBuilderModal'));
   document.getElementById('chartBuilderModal').classList.add('show');
 }
 
@@ -2325,12 +2892,18 @@ document.getElementById('cb_save').addEventListener('click', async () => {
     statusEl.className = 'biller-status err';
     return;
   }
-  const name = document.getElementById('cb_name').value.trim();
-  if (!name) {
-    statusEl.textContent = 'Chart name is required.';
+  clearErrorsIn_(document.getElementById('chartBuilderModal'));
+  const isNumberCard = document.getElementById('cb_type').value === 'number';
+  const chartCheck = applyChecks_([
+    ['cb_name', vFreeText_(document.getElementById('cb_name').value, 'Chart name', 60, true, 2), 'name'],
+    ['cb_topN', isNumberCard ? vRes_(0) : vInt_(document.getElementById('cb_topN').value.trim(), 'Show Top', 0, 100, false, 0), 'topN']
+  ]);
+  if (!chartCheck.ok) {
+    statusEl.textContent = chartCheck.firstError;
     statusEl.className = 'biller-status err';
     return;
   }
+  const name = chartCheck.values.name;
   const chartIdVal = document.getElementById('cb_chartId').value;
   const colorEl = document.getElementById('cb_color');
   const payload = Object.assign({
@@ -2340,7 +2913,7 @@ document.getElementById('cb_save').addEventListener('click', async () => {
     dimension: document.getElementById('cb_dimension').value,
     metric: document.getElementById('cb_metric').value,
     metricField: document.getElementById('cb_metricField').value,
-    topN: document.getElementById('cb_topN').value || 0,
+    topN: chartCheck.values.topN,
     sortDir: document.getElementById('cb_sortDir').value,
     color: (document.getElementById('cb_type').value === 'number' && colorEl) ? colorEl.value : ''
   }, chartIdVal ? { chartId: chartIdVal } : {}, creds);
@@ -2365,9 +2938,12 @@ document.getElementById('lookupBtn').addEventListener('click', doLookup);
 document.getElementById('lookupBillId').addEventListener('keydown', e => { if (e.key === 'Enter') doLookup(); });
 
 async function doLookup() {
-  const billId = document.getElementById('lookupBillId').value.trim();
+  // "12", "sjp12" or "SJP-000012" all find the same bill.
+  const inputEl = document.getElementById('lookupBillId');
+  const billId = normalizeBillId_(inputEl.value);
   const resultBox = document.getElementById('lookupResult');
   if (!billId) return;
+  inputEl.value = billId;
   resultBox.innerHTML = '<p>Searching...</p>';
   const r = await apiGet('getBill', { billId });
   if (!r.ok) { resultBox.innerHTML = `<p style="color:var(--danger);">${escapeHtml(r.error)}</p>`; return; }
@@ -2409,6 +2985,7 @@ function addEditProductRow(item) {
     <button class="remove-row" title="Remove">✕</button>
   `;
   document.getElementById('editProductRows').appendChild(wrap);
+  decorateInputs_(wrap);
 
   const priceInput = wrap.querySelector('.erow-price');
   const qtyInput = wrap.querySelector('.erow-qty');
@@ -2578,7 +3155,7 @@ function renderLookupResult(bill) {
 
         <div class="form-grid" style="margin-top:12px;">
           <div class="field"><label>Patient Name</label><input id="edit_customerName" type="text" value="${escapeHtml(bill.customerName || '')}"></div>
-          <div class="field"><label>Phone Number</label><input id="edit_phone" type="tel" value="${escapeHtml(bill.phone || '')}"></div>
+          <div class="field"><label>Phone Number</label><input id="edit_phone" type="tel" value="${escapeHtml(normalizeMobile_(bill.phone) || '')}"></div>
           <div class="field"><label>Email</label><input id="edit_email" type="email" value="${escapeHtml(bill.email || '')}"></div>
           <div class="field"><label>Payment Method</label>
             <select id="edit_paymentMethod">
@@ -2685,12 +3262,15 @@ function renderLookupResult(bill) {
         items: (bill.items || []).map(i => ({ name: i.name, price: Number(i.price), qty: Number(i.qty), discountPercent: Number(i.discountPercent) || 0 })),
         totalDiscountPct: Number(bill.discountPercent) || 0,
         taxOverride: bill.taxOverride === 'TRUE',
-        paymentMethod: bill.paymentMethod
+        paymentMethod: bill.paymentMethod,
+        phone: bill.phone,
+        email: bill.email
       });
     });
     return; // no edit form was rendered, so nothing else below applies
   }
 
+  decorateInputs_(resultBox);
   document.getElementById('editProductRows').innerHTML = '';
   bill.items.forEach(it => addEditProductRow(it));
 
@@ -2739,19 +3319,65 @@ function renderLookupResult(bill) {
       items: shareItems,
       totalDiscountPct: Number(bill.discountPercent) || 0,
       taxOverride: bill.taxOverride === 'TRUE',
-      paymentMethod: bill.paymentMethod
+      paymentMethod: bill.paymentMethod,
+      phone: bill.phone,
+      email: bill.email
     });
   });
 
   document.getElementById('saveEditBtn').addEventListener('click', async () => {
-    const items = getEditLineItems();
-    if (!items.length) { toast('Add at least one product line.', 'error'); return; }
-    const versionNote = document.getElementById('edit_note').value.trim();
-    if (!versionNote) {
-      toast('Please enter a reason for this change before saving.', 'error');
-      document.getElementById('edit_note').focus();
-      return;
-    }
+    const editRoot = document.getElementById('lookupResult');
+    clearErrorsIn_(editRoot);
+    const val = id => document.getElementById(id).value;
+
+    // Same rules as Create Bill, but - exactly like the server - only for
+    // fields that were actually changed, so an older bill whose stored
+    // value predates these rules can still be corrected elsewhere.
+    const checks = [];
+    const ifChanged = (id, original, validator) => {
+      if (vLine_(val(id)) !== vLine_(original)) checks.push([id, validator(val(id))]);
+    };
+    ifChanged('edit_customerName', bill.customerName, v => vPersonName_(v, 'Patient Name', true));
+    if (normalizeMobile_(val('edit_phone')) !== normalizeMobile_(bill.phone)) checks.push(['edit_phone', vMobile_(val('edit_phone'), 'Phone Number', true)]);
+    ifChanged('edit_email', bill.email, v => vEmail_(v, 'Email', false));
+    ifChanged('edit_address', bill.address, v => vAddress_(v, 'Address'));
+    ifChanged('edit_deliveryAddress', bill.deliveryAddress, v => vAddress_(v, 'Delivery Address'));
+    const noteRes = vFreeText_(val('edit_note'), 'Reason For Change', VLIMIT.NOTE_MAX, true, 3);
+    checks.push(['edit_note', noteRes.error && !vLine_(val('edit_note')) ? vRes_('', 'Please enter a reason for this change before saving.') : noteRes]);
+
+    const discOn = document.getElementById('edit_showDiscountToggle').classList.contains('on');
+    if (discOn) checks.push(['edit_totalDiscountPct', vPercent_(val('edit_totalDiscountPct'), 'Additional Discount %')]);
+
+    const knownNames = {};
+    (bill.items || []).forEach(i => { knownNames[vLine_(i.name).toLowerCase()] = true; });
+    const items = [];
+    let n = 0;
+    document.querySelectorAll('#editProductRows .product-row').forEach(row => {
+      n++;
+      const nameEl = row.querySelector('.erow-name');
+      const priceEl = row.querySelector('.erow-price');
+      const qtyEl = row.querySelector('.erow-qty');
+      const discEl = row.querySelector('.erow-discount');
+      const nameRaw = vLine_(nameEl.value);
+      if (!nameRaw) {
+        if (Number(priceEl.value) > 0) checks.push([nameEl, vRes_('', 'Line ' + n + ': enter a service/treatment, or remove this line with ✕.')]);
+        return;
+      }
+      const isKnown = knownNames[nameRaw.toLowerCase()] || findProductByName_(nameRaw);
+      const nameRes = isKnown ? vRes_(nameRaw) : vProductName_(nameRaw, 'Line ' + n + ' service/treatment');
+      const priceRes = vMoney_(priceEl.value, 'Line ' + n + ' price', true);
+      const qtyRes = vInt_(qtyEl.value, 'Line ' + n + ' qty', 1, VLIMIT.QTY_MAX, true);
+      const discRes = discOn ? vPercent_(discEl ? discEl.value : 0, 'Line ' + n + ' discount %') : vRes_(0);
+      checks.push([nameEl, nameRes], [priceEl, priceRes], [qtyEl, qtyRes]);
+      if (discOn && discEl) checks.push([discEl, discRes]);
+      if (!nameRes.error && !priceRes.error && !qtyRes.error && !discRes.error) {
+        items.push({ name: nameRes.value, price: priceRes.value, qty: qtyRes.value, discountPercent: discRes.value });
+      }
+    });
+
+    const result = applyChecks_(checks);
+    if (!result.ok) { toast(result.firstError, 'error'); return; }
+    if (!items.length) { toast('Add at least one service/treatment line.', 'error'); return; }
 
     const authPayload = isBillerEditor
       ? { billerId: state.session.billerId, billerPassword: state.session.billerPassword }
@@ -2761,23 +3387,33 @@ function renderLookupResult(bill) {
     const bankOverride = getEditToggleOverride_('editBankToggleField', 'edit_showBankToggle') ? 'TRUE' : 'FALSE';
     const totalDiscountPct = getEditBillLevelDiscountPct_();
 
-    const r = await apiPost('updateBill', Object.assign({
-      billId: bill.billId,
-      versionNote: versionNote,
-      fields: {
-        customerName: document.getElementById('edit_customerName').value.trim(),
-        phone: document.getElementById('edit_phone').value.trim(),
-        email: document.getElementById('edit_email').value.trim(),
-        address: document.getElementById('edit_address').value.trim(),
-        deliveryAddress: document.getElementById('edit_deliveryAddress').value.trim(),
-        paymentMethod: document.getElementById('edit_paymentMethod').value,
-        paymentStatus: document.getElementById('edit_status').value,
-        taxOverride: taxOverride,
-        bankOverride: bankOverride,
-        discountPercent: totalDiscountPct,
-        items: items
-      }
-    }, authPayload));
+    const saveBtn = document.getElementById('saveEditBtn');
+    saveBtn.disabled = true; saveBtn.textContent = 'Saving...';
+    let r;
+    try {
+      r = await apiPost('updateBill', Object.assign({
+        billId: bill.billId,
+        versionNote: noteRes.value,
+        fields: {
+          customerName: vLine_(val('edit_customerName')),
+          phone: val('edit_phone').trim(),
+          email: vLine_(val('edit_email')),
+          address: vMulti_(val('edit_address')),
+          deliveryAddress: vMulti_(val('edit_deliveryAddress')),
+          paymentMethod: val('edit_paymentMethod'),
+          paymentStatus: val('edit_status'),
+          taxOverride: taxOverride,
+          bankOverride: bankOverride,
+          discountPercent: totalDiscountPct,
+          items: items
+        }
+      }, authPayload));
+    } catch (err) {
+      toast('Network error while saving the correction - please try again.', 'error');
+      return;
+    } finally {
+      saveBtn.disabled = false; saveBtn.textContent = 'Save Correction';
+    }
     if (r.ok) {
       toast('Bill updated' + (isBillerEditor ? '' : ' by super admin'), 'success');
       doLookup();
@@ -2785,8 +3421,13 @@ function renderLookupResult(bill) {
       // (old quantities restored, new ones deducted) - re-sync the local
       // product list so it's not left showing stale numbers anywhere.
       refreshProductsFromServer_();
+    } else {
+      markServerFieldError_(r, {
+        customerName: 'edit_customerName', phone: 'edit_phone', email: 'edit_email', address: 'edit_address',
+        deliveryAddress: 'edit_deliveryAddress', versionNote: 'edit_note', discountPercent: 'edit_totalDiscountPct'
+      });
+      toast(r.error || 'Update failed', 'error');
     }
-    else toast(r.error || 'Update failed', 'error');
   });
 }
 
@@ -2814,7 +3455,12 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     document.querySelectorAll('.admin-pane').forEach(p => p.classList.remove('active'));
     document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
     if (tab.dataset.tab === 'billers') renderBillerTable();
-    if (tab.dataset.tab === 'products') renderProductTable();
+    if (tab.dataset.tab === 'products') {
+      renderProductTable();
+      // The start-up list only has ACTIVE products - fetch the full list so
+      // an inactive product is visible here and can be switched back on.
+      refreshProductsFromServer_().then(() => { if (tab.classList.contains('active') && productEditingId === null) renderProductTable(); });
+    }
     if (tab.dataset.tab === 'theme') renderAllThemePreviews_();
   });
 });
@@ -2920,8 +3566,10 @@ function collectThemeFieldsFromForm_() {
 
     ThemeBillFontFamily: fv('theme_billFont'),
     ThemeBillDiscountColor: fv('theme_billDiscount'),
-    ThemeBillLogoWidth: fv('theme_billLogoWidth'),
-    ThemeBillLogoHeight: fv('theme_billLogoHeight'),
+    // Clamped to the same 20-400px the field allows, so an emptied or
+    // out-of-range box can never save a broken logo size.
+    ThemeBillLogoWidth: String(Math.min(400, Math.max(20, Math.round(Number(fv('theme_billLogoWidth')) || 96)))),
+    ThemeBillLogoHeight: String(Math.min(400, Math.max(20, Math.round(Number(fv('theme_billLogoHeight')) || 58)))),
 
     ThemeButtonHoverFrom: fv('theme_buttonHoverFrom'),
     ThemeButtonHoverTo: fv('theme_buttonHoverTo'),
@@ -2944,7 +3592,7 @@ document.getElementById('saveThemeBtn').addEventListener('click', async () => {
     toast('Theme saved - applying now for everyone.', 'success');
     Object.assign(state.settings, themeFields);
     applyTheme_(state.settings);
-    loadDashboard();
+    if (document.getElementById('view-dashboard').classList.contains('active')) loadDashboard(); // only redraw if it is on screen
     renderPreview();
   } else {
     toast(r.error || 'Could not save theme', 'error');
@@ -2968,7 +3616,7 @@ document.getElementById('resetThemeBtn').addEventListener('click', async () => {
     const sr = await apiGet('getSettings');
     if (sr.ok) Object.assign(state.settings, sr.settings);
     applyTheme_(state.settings);
-    loadDashboard();
+    if (document.getElementById('view-dashboard').classList.contains('active')) loadDashboard();
     renderPreview();
   } else {
     toast(r.error || 'Could not reset theme', 'error');
@@ -3088,7 +3736,7 @@ async function addNewDatabaseAutomatic_(triggerBtn) {
       resultBox.innerHTML =
         '<b>Done!</b> New database: <b>' + escapeHtml(r.newSpreadsheetName || '') + '</b><br>' +
         'Old database archived as: <b>' + escapeHtml(r.archivedLabel || '') + '</b><br>' +
-        '<a href="' + r.newSpreadsheetUrl + '" target="_blank" rel="noopener">Open the new spreadsheet &rarr;</a>';
+        '<a href="' + escapeHtml(r.newSpreadsheetUrl || '') + '" target="_blank" rel="noopener">Open the new spreadsheet &rarr;</a>';
     }
     closeDbFullModal_();
     checkSpreadsheetCapacity_();
@@ -3186,7 +3834,7 @@ function renderDbCard_(db, isActive) {
         <div class="ds-db-name-pill ${isActive ? '' : 'ds-db-pill-muted'}">${escapeHtml(db.name)}</div>
         <span class="ds-db-badge ${isActive ? 'ds-db-badge-active' : 'ds-db-badge-archived'}">${isActive ? 'Active' : 'Archived'}</span>
       </div>
-      ${db.url ? '<div class="ds-db-sheetname"><a href="' + db.url + '" target="_blank" rel="noopener">Open sheet &rarr;</a></div>' : ''}
+      ${db.url ? '<div class="ds-db-sheetname"><a href="' + escapeHtml(db.url) + '" target="_blank" rel="noopener">Open sheet &rarr;</a></div>' : ''}
       ${progressHtml}
       ${rowsHtml}
     </div>`;
@@ -3362,6 +4010,7 @@ function openBillerModal(biller) {
   document.getElementById('bm_editId').value = biller ? biller.billerId : '';
   document.getElementById('bm_name').value = biller ? biller.name : '';
   document.getElementById('bm_password').value = '';
+  clearErrorsIn_(document.getElementById('billerModal'));
   document.getElementById('billerModal').classList.add('show');
 }
 document.getElementById('bm_cancel').addEventListener('click', () => document.getElementById('billerModal').classList.remove('show'));
@@ -3369,16 +4018,31 @@ document.getElementById('bm_save').addEventListener('click', async () => {
   const creds = getSuperAdminCreds();
   if (!creds.superAdminUser || !creds.superAdminPass) { toast('Enter Super Admin credentials above first.', 'error'); return; }
   const editId = document.getElementById('bm_editId').value;
-  const name = document.getElementById('bm_name').value.trim();
-  const password = document.getElementById('bm_password').value.trim();
-  if (!name) { toast('Biller name required', 'error'); return; }
-  if (!editId && !password) { toast('Password required for new biller', 'error'); return; }
-  const r = await apiPost('saveBiller', { editBillerId: editId || null, name, password, ...creds });
-  if (r.ok) {
-    document.getElementById('billerModal').classList.remove('show');
-    await refreshBillers();
-    toast('Biller saved', 'success');
-  } else toast(r.error, 'error');
+  const existing = editId ? state.billers.find(x => x.billerId === editId) : null;
+  clearErrorsIn_(document.getElementById('billerModal'));
+  const rawName = document.getElementById('bm_name').value;
+  // An existing biller's unchanged name is always accepted as-is.
+  const nameRes = (existing && vLine_(rawName) === vLine_(existing.name)) ? vRes_(vLine_(rawName)) : vPersonName_(rawName, 'Biller Name', true);
+  const passRes = vPassword_(document.getElementById('bm_password').value, 'Password', 4, !editId);
+  const check = applyChecks_([['bm_name', nameRes, 'name'], ['bm_password', passRes, 'password']]);
+  if (!check.ok) { toast(check.firstError, 'error'); return; }
+  const btn = document.getElementById('bm_save');
+  btn.disabled = true;
+  try {
+    const r = await apiPost('saveBiller', { editBillerId: editId || null, name: check.values.name, password: check.values.password, ...creds });
+    if (r.ok) {
+      document.getElementById('billerModal').classList.remove('show');
+      await refreshBillers();
+      toast('Biller saved', 'success');
+    } else {
+      markServerFieldError_(r, { name: 'bm_name', password: 'bm_password' });
+      toast(r.error, 'error');
+    }
+  } catch (err) {
+    toast('Network error while saving the biller.', 'error');
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 // Shop settings save
@@ -3396,73 +4060,126 @@ document.getElementById('refreshDashboardSheetBtn').addEventListener('click', as
 
 
 
+// Validates a group of Settings inputs - [inputId, settingsKey, validator].
+// Like the server, only fields that were actually CHANGED are checked, so a
+// value saved before these rules existed never blocks saving something
+// else. Each changed field is shown back in its cleaned form (e.g. a link
+// gets its missing https:// added). Returns the values to send, or null.
+function collectSettings_(fields) {
+  const checks = [], out = {};
+  fields.forEach(([id, key, validate]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const raw = el.value;
+    const stored = state.settings[key];
+    if (vLine_(raw) === vLine_(stored == null ? '' : stored)) { out[key] = raw.trim(); return; }
+    const res = validate(raw);
+    checks.push([el, res]);
+    if (!res.error) { out[key] = res.value; el.value = res.value; }
+  });
+  const result = applyChecks_(checks);
+  if (!result.ok) { toast(result.firstError, 'error'); return null; }
+  return out;
+}
+const upperNoSpace_ = v => v.toUpperCase().replace(/\s/g, '');
+
 document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
   const creds = getSuperAdminCreds();
   if (!creds.superAdminUser || !creds.superAdminPass) { toast('Enter Super Admin credentials above first.', 'error'); return; }
-  const payload = {
-    ...creds,
-    LogoURL: document.getElementById('s_logo').value.trim(),
-    PrintLogoURL: document.getElementById('s_printLogo')
-      ? document.getElementById('s_printLogo').value.trim()
-      : '',
-    CompanyName: document.getElementById('s_companyName').value.trim(),
-    Phone: document.getElementById('s_phone').value.trim(),
-    Address: document.getElementById('s_address').value.trim(),
-    Website: document.getElementById('s_website').value.trim(),
-    GSTNumber: document.getElementById('s_gst').value.trim(),
-    SocialWhatsApp: document.getElementById('s_socialWhatsapp').value.trim(),
-    SocialInstagram: document.getElementById('s_socialInstagram').value.trim(),
-    SocialFacebook: document.getElementById('s_socialFacebook').value.trim(),
-    SocialLinkedIn: document.getElementById('s_socialLinkedin').value.trim(),
-    SocialYouTube: document.getElementById('s_socialYoutube').value.trim()
-  };
-  const r = await apiPost('updateSettings', payload);
-  if (r.ok) {
-    toast('Shop details saved', 'success');
-    // Keep local state in sync even if a stale backend omits a field
-    state.settings = Object.assign({}, state.settings, {
-      LogoURL: payload.LogoURL,
-      PrintLogoURL: payload.PrintLogoURL,
-      CompanyName: payload.CompanyName,
-      Phone: payload.Phone,
-      Address: payload.Address,
-      Website: payload.Website,
-      GSTNumber: payload.GSTNumber
-    });
-    const boot = await apiGet('getSettings');
-    if (boot.ok && boot.settings) {
-      state.settings = Object.assign({}, state.settings, boot.settings);
+  clearErrorsIn_(document.getElementById('tab-shop'));
+  const values = collectSettings_([
+    ['s_logo', 'LogoURL', v => vUrl_(v, 'App Logo URL')],
+    ['s_printLogo', 'PrintLogoURL', v => vUrl_(v, 'Print Bill Logo URL')],
+    ['s_companyName', 'CompanyName', v => vFreeText_(v, 'Company Name', 80, true, 2)],
+    ['s_phone', 'Phone', v => vShopPhone_(v, 'Phone')],
+    ['s_address', 'Address', v => vAddress_(v, 'Address')],
+    ['s_website', 'Website', v => vPattern_(v, 'Website', VR.WEBSITE, 100, 'is not a valid website (e.g. www.example.com).', x => x.replace(/\s/g, ''))],
+    ['s_gst', 'GSTNumber', v => vPattern_(v, 'GST Number', VR.GSTIN, 15, 'must be a valid 15-character GSTIN (e.g. 33ABCDE1234F1Z5).', upperNoSpace_)],
+    ['s_socialWhatsapp', 'SocialWhatsApp', v => vMobile_(v, 'WhatsApp Number', false)],
+    ['s_socialInstagram', 'SocialInstagram', v => vUrl_(v, 'Instagram URL')],
+    ['s_socialFacebook', 'SocialFacebook', v => vUrl_(v, 'Facebook URL')],
+    ['s_socialLinkedin', 'SocialLinkedIn', v => vUrl_(v, 'LinkedIn URL')],
+    ['s_socialYoutube', 'SocialYouTube', v => vUrl_(v, 'YouTube URL')]
+  ]);
+  if (!values) return;
+  const payload = Object.assign({}, creds, values);
+  const btn = document.getElementById('saveSettingsBtn');
+  btn.disabled = true;
+  try {
+    const r = await apiPost('updateSettings', payload);
+    if (r.ok) {
+      toast('Shop details saved', 'success');
+      // Keep local state in sync even if a stale backend omits a field
+      state.settings = Object.assign({}, state.settings, values);
+      const boot = await apiGet('getSettings');
+      if (boot.ok && boot.settings) {
+        state.settings = Object.assign({}, state.settings, boot.settings);
+      }
+      applySettingsToUI();
+      renderPreview();
+    } else {
+      markServerFieldError_(r, SETTINGS_FIELD_IDS_);
+      toast(r.error, 'error');
     }
-    applySettingsToUI();
-    renderPreview();
-  } else toast(r.error, 'error');
+  } catch (err) {
+    toast('Network error while saving shop details.', 'error');
+  } finally {
+    btn.disabled = false;
+  }
 });
+
+const SETTINGS_FIELD_IDS_ = {
+  LogoURL: 's_logo', PrintLogoURL: 's_printLogo', CompanyName: 's_companyName', Phone: 's_phone',
+  Address: 's_address', Website: 's_website', GSTNumber: 's_gst', SocialWhatsApp: 's_socialWhatsapp',
+  SocialInstagram: 's_socialInstagram', SocialFacebook: 's_socialFacebook', SocialLinkedIn: 's_socialLinkedin',
+  SocialYouTube: 's_socialYoutube', CompanyEmail: 's_companyEmail', CGSTPercent: 's_cgst', SGSTPercent: 's_sgst',
+  BankName: 's_bankName', BankAccountNo: 's_bankAccountNo', BankIFSC: 's_bankIFSC',
+  BankAccountHolder: 's_bankAccountHolder', AuthorizedSignatoryLabel: 's_signatoryLabel',
+  newSuperAdminUser: 'acc_newUser', newSuperAdminPass: 'acc_newPass'
+};
 
 document.getElementById('saveInvoiceSettingsBtn').addEventListener('click', async () => {
   const creds = getSuperAdminCreds();
   if (!creds.superAdminUser || !creds.superAdminPass) { toast('Enter Super Admin credentials above first.', 'error'); return; }
-  const payload = {
-    ...creds,
-    CompanyEmail: document.getElementById('s_companyEmail').value.trim(),
-    CGSTPercent: Number(document.getElementById('s_cgst').value) || 0,
-    SGSTPercent: Number(document.getElementById('s_sgst').value) || 0,
-    BankName: document.getElementById('s_bankName').value.trim(),
-    BankAccountNo: document.getElementById('s_bankAccountNo').value.trim(),
-    BankIFSC: document.getElementById('s_bankIFSC').value.trim(),
-    BankAccountHolder: document.getElementById('s_bankAccountHolder').value.trim(),
-    AuthorizedSignatoryLabel: document.getElementById('s_signatoryLabel').value.trim() || 'Authorized Signatory',
+  clearErrorsIn_(document.getElementById('tab-invoice'));
+  const values = collectSettings_([
+    ['s_companyEmail', 'CompanyEmail', v => vEmail_(v, 'Company Email', false)],
+    ['s_cgst', 'CGSTPercent', v => vPercent_(v, 'CGST %')],
+    ['s_sgst', 'SGSTPercent', v => vPercent_(v, 'SGST %')],
+    ['s_bankName', 'BankName', v => vPattern_(v, 'Bank Name', VR.ORG_NAME, 60, 'can only contain letters, numbers, spaces and . , & \' ( ) -')],
+    ['s_bankAccountNo', 'BankAccountNo', v => vPattern_(v, 'Account Number', VR.ACCOUNT_NO, 18, 'must be 9 to 18 digits (digits only).', x => x.replace(/\s/g, ''))],
+    ['s_bankIFSC', 'BankIFSC', v => vPattern_(v, 'IFSC Code', VR.IFSC, 11, 'must be a valid 11-character IFSC (e.g. YESB0000123).', upperNoSpace_)],
+    ['s_bankAccountHolder', 'BankAccountHolder', v => vPattern_(v, 'Account Holder Name', VR.ORG_NAME, 80, 'can only contain letters, numbers, spaces and . , & \' ( ) -')],
+    ['s_signatoryLabel', 'AuthorizedSignatoryLabel', v => vFreeText_(v, 'Signatory Label', 40, false)]
+  ]);
+  if (!values) return;
+  const payload = Object.assign({}, creds, values, {
+    CGSTPercent: Number(values.CGSTPercent) || 0,
+    SGSTPercent: Number(values.SGSTPercent) || 0,
+    AuthorizedSignatoryLabel: values.AuthorizedSignatoryLabel || 'Authorized Signatory',
     ShowCompanyEmail: document.getElementById('s_showCompanyEmail').value,
     ShowTaxOnBill: document.getElementById('s_showTaxOnBill').value,
     ShowBankDetails: document.getElementById('s_showBankDetails').value,
     ShowDiscountOption: document.getElementById('s_showDiscountOption').value,
     ShowAuthorizedSignatory: document.getElementById('s_showAuthorizedSignatory').value
-  };
-  const r = await apiPost('updateSettings', payload);
-  if (r.ok) {
-    toast('Invoice / Tax settings saved', 'success');
-    const boot = await apiGet('getSettings');
-    if (boot.ok) { state.settings = boot.settings; applySettingsToUI(); refreshBillToggleVisibility_(); renderPreview(); }
-  } else toast(r.error, 'error');
+  });
+  const btn = document.getElementById('saveInvoiceSettingsBtn');
+  btn.disabled = true;
+  try {
+    const r = await apiPost('updateSettings', payload);
+    if (r.ok) {
+      toast('Invoice / Tax settings saved', 'success');
+      const boot = await apiGet('getSettings');
+      if (boot.ok) { state.settings = boot.settings; applySettingsToUI(); refreshBillToggleVisibility_(); renderPreview(); }
+    } else {
+      markServerFieldError_(r, SETTINGS_FIELD_IDS_);
+      toast(r.error, 'error');
+    }
+  } catch (err) {
+    toast('Network error while saving invoice settings.', 'error');
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 document.getElementById('saveAccountBtn').addEventListener('click', async () => {
@@ -3475,17 +4192,29 @@ document.getElementById('saveAccountBtn').addEventListener('click', async () => 
     statusEl.className = 'biller-status err';
     return;
   }
-  const newUser = document.getElementById('acc_newUser').value.trim();
-  const newPass = document.getElementById('acc_newPass').value.trim();
-  const confirmPass = document.getElementById('acc_confirmPass').value.trim();
+  clearErrorsIn_(document.getElementById('tab-account'));
+  const newUser = vLine_(document.getElementById('acc_newUser').value);
+  const newPass = document.getElementById('acc_newPass').value;
+  const confirmPass = document.getElementById('acc_confirmPass').value;
 
   if (!newUser && !newPass) {
     statusEl.textContent = 'Enter a new username and/or a new password to change.';
     statusEl.className = 'biller-status err';
     return;
   }
-  if (newPass && newPass !== confirmPass) {
-    statusEl.textContent = 'New password and confirmation do not match.';
+  const checks = [];
+  if (newUser) {
+    checks.push(['acc_newUser', (newUser.length < 3 || newUser.length > 40 || !VR.ADMIN_USER.test(newUser))
+      ? vRes_(newUser, 'New username must be 3 to 40 characters - letters, numbers, spaces and . _ - @ only.')
+      : vRes_(newUser)]);
+  }
+  if (newPass) {
+    checks.push(['acc_newPass', vPassword_(newPass, 'New password', 6, true)]);
+    checks.push(['acc_confirmPass', newPass === confirmPass ? vRes_(confirmPass) : vRes_(confirmPass, 'New password and confirmation do not match.')]);
+  }
+  const accCheck = applyChecks_(checks);
+  if (!accCheck.ok) {
+    statusEl.textContent = accCheck.firstError;
     statusEl.className = 'biller-status err';
     return;
   }
@@ -3500,12 +4229,12 @@ document.getElementById('saveAccountBtn').addEventListener('click', async () => 
     });
     if (r.ok) {
       toast('Login updated - please log in again with your new credentials', 'success');
-      ['SJP_user', 'SJP_displayName', 'SJP_role', 'SJP_billerId', 'SJP_billerName', 'SJP_billerPass',
-       'SJP_canAccessTax', 'SJP_canAccessBank', 'SJP_canAccessFindEdit',
-       'SJP_canAccessStockView', 'SJP_canAccessStockEdit', 'SJP_canAccessReportDownload',
-   'SJP_canAccessDiscount', 'SJP_canAccessDashboard', 'SJP_canAccessLetterpad'].forEach(k => sessionStorage.removeItem(k));
+      // Shared key list (includes the session token, which this hand-typed
+      // list used to miss - the old login's token lingered in the tab).
+      SESSION_STORAGE_KEYS.forEach(k => sessionStorage.removeItem(k));
       setTimeout(() => location.reload(), 1200);
     } else {
+      markServerFieldError_(r, SETTINGS_FIELD_IDS_);
       statusEl.textContent = r.error || 'Could not update login.';
       statusEl.className = 'biller-status err';
     }
@@ -3526,6 +4255,7 @@ let productEditingId = null;
 function renderProductTable() {
   const tbody = document.getElementById('productTableBody');
   tbody.innerHTML = state.products.map(p => productRowHtml_(p)).join('');
+  decorateInputs_(tbody);
   tbody.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => handleProductRowAction_(btn.dataset.action, btn.dataset.id));
   });
@@ -3595,9 +4325,19 @@ async function handleProductRowAction_(action, productId) {
 
   if (action === 'save') {
     const row = document.querySelector('#productTableBody tr[data-id="' + productId + '"]');
-    const name = row.querySelector('.pt-name').value.trim();
-    const defaultPrice = Number(row.querySelector('.pt-price').value) || 0;
-    if (!name) { toast('Product name required', 'error'); return; }
+    const nameEl = row.querySelector('.pt-name');
+    const priceEl = row.querySelector('.pt-price');
+    // Unchanged (older) names are accepted as-is; a renamed one must follow
+    // the rules and must not clash with another product - stock and sales
+    // are matched by name, so two identical names would mix them up.
+    const nameRes = vLine_(nameEl.value) === vLine_(p.name) ? vRes_(vLine_(nameEl.value)) : vProductName_(nameEl.value, 'Service/Treatment name');
+    const clash = !nameRes.error && state.products.find(x => String(x.id) !== String(productId) && vLine_(x.name).toLowerCase() === nameRes.value.toLowerCase());
+    const check = applyChecks_([
+      [nameEl, clash ? vRes_(nameRes.value, '"' + clash.name + '" already exists in the list.') : nameRes, 'name'],
+      [priceEl, vMoney_(priceEl.value, 'Default Price', true), 'price']
+    ]);
+    if (!check.ok) { toast(check.firstError, 'error'); return; }
+    const name = check.values.name, defaultPrice = check.values.price;
     const r = await apiPost('updateProduct', { productId, name, defaultPrice, active: p.active, ...creds });
     if (r.ok) {
       p.name = name; p.defaultPrice = defaultPrice;
@@ -3621,20 +4361,37 @@ async function handleProductRowAction_(action, productId) {
 }
 
 document.getElementById('addProductBtnAdmin').addEventListener('click', async () => {
-  const name = document.getElementById('np_name').value.trim();
-  const price = Number(document.getElementById('np_price').value) || 0;
-  const stockField = document.getElementById('np_stock').value.trim();
-  const hasStock = stockField !== '';
-  if (!name) { toast('Product name required', 'error'); return; }
+  clearErrorsIn_(document.getElementById('tab-products'));
+  const nameRes = vProductName_(document.getElementById('np_name').value, 'Service/Treatment name');
+  const clash = !nameRes.error && state.products.find(x => vLine_(x.name).toLowerCase() === nameRes.value.toLowerCase());
+  const check = applyChecks_([
+    ['np_name', clash ? vRes_(nameRes.value, '"' + clash.name + '" already exists in the list.') : nameRes, 'name'],
+    ['np_price', vMoney_(document.getElementById('np_price').value, 'Default Price', false), 'price'],
+    ['np_stock', vInt_(document.getElementById('np_stock').value.trim(), 'Starting Stock', 0, VLIMIT.STOCK_MAX, false, ''), 'stock']
+  ]);
+  if (!check.ok) { toast(check.firstError, 'error'); return; }
+  const { name, price } = check.values;
+  const hasStock = check.values.stock !== '';
   const payload = { name, defaultPrice: price };
-  if (hasStock) payload.stock = Number(stockField) || 0;
-  const r = await apiPost('addProduct', payload);
-  if (r.ok) {
-    state.products.push({ id: r.productId, name, defaultPrice: price, active: true, stock: hasStock ? (Number(stockField) || 0) : null, lowStockThreshold: 5 });
-    renderProductTable();
-    document.getElementById('np_name').value = ''; document.getElementById('np_price').value = ''; document.getElementById('np_stock').value = '';
-    toast('Product added', 'success');
-  } else toast(r.error, 'error');
+  if (hasStock) payload.stock = check.values.stock;
+  const btn = document.getElementById('addProductBtnAdmin');
+  btn.disabled = true;
+  try {
+    const r = await apiPost('addProduct', payload);
+    if (r.ok) {
+      state.products.push({ id: r.productId, name, defaultPrice: price, active: true, stock: hasStock ? check.values.stock : null, lowStockThreshold: 5 });
+      renderProductTable();
+      document.getElementById('np_name').value = ''; document.getElementById('np_price').value = ''; document.getElementById('np_stock').value = '';
+      toast('Product added', 'success');
+    } else {
+      markServerFieldError_(r, { name: 'np_name', defaultPrice: 'np_price', stock: 'np_stock' });
+      toast(r.error, 'error');
+    }
+  } catch (err) {
+    toast('Network error while adding the product.', 'error');
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 // -------------------------------------------------------------------------
@@ -3717,6 +4474,7 @@ function renderInventoryTable() {
   }).join('');
 
   if (!canEdit) return;
+  decorateInputs_(tbody);
   tbody.querySelectorAll('button[data-action]').forEach(btn => {
     btn.addEventListener('click', () => handleInventoryAction_(btn.dataset.action, btn.dataset.id, btn.dataset.delta));
   });
@@ -3756,16 +4514,18 @@ async function handleInventoryAction_(action, productId, deltaAttr) {
     const row = document.querySelector('#inventoryTableBody tr[data-id="' + productId + '"]');
     const input = row.querySelector('.inv-stock-input');
     const delta = Number(deltaAttr) || 0;
-    input.value = Math.max(0, (Number(input.value) || 0) + delta);
+    input.value = Math.min(VLIMIT.STOCK_MAX, Math.max(0, (Number(input.value) || 0) + delta));
+    clearFieldError_(input);
     return;
   }
 
   if (action === 'startTracking') {
     if (!requireSuperAdminForInventory_()) return;
-    const val = prompt('Starting stock count for "' + p.name + '":', '0');
+    const val = prompt('Starting stock count for "' + p.name + '" (whole number):', '0');
     if (val === null) return;
-    const n = Number(val);
-    if (isNaN(n) || n < 0) { toast('Enter a valid, non-negative number.', 'error'); return; }
+    const res = vInt_(String(val).trim(), 'Starting stock', 0, VLIMIT.STOCK_MAX, true);
+    if (res.error) { toast(res.error, 'error'); return; }
+    const n = res.value;
     const r = await apiPost('setProductStock', Object.assign({ productId, mode: 'set', value: n }, getStockAuthPayload_()));
     if (r.ok) {
       p.stock = r.newStock;
@@ -3780,14 +4540,18 @@ async function handleInventoryAction_(action, productId, deltaAttr) {
     const row = document.querySelector('#inventoryTableBody tr[data-id="' + productId + '"]');
     const stockInput = row.querySelector('.inv-stock-input');
     const thresholdInput = row.querySelector('.inv-threshold-input');
-    const newStock = Number(stockInput.value);
-    if (isNaN(newStock) || newStock < 0) { toast('Enter a valid, non-negative stock value.', 'error'); return; }
+    // An emptied box used to save as 0 stock without any warning.
+    const checks = [[stockInput, vInt_(stockInput.value.trim(), 'Stock', 0, VLIMIT.STOCK_MAX, true), 'stock']];
+    if (thresholdInput) checks.push([thresholdInput, vInt_(thresholdInput.value.trim(), 'Low stock alert', 0, VLIMIT.THRESHOLD_MAX, true), 'threshold']);
+    const check = applyChecks_(checks);
+    if (!check.ok) { toast(check.firstError, 'error'); return; }
+    const newStock = check.values.stock;
     const payload = Object.assign({ productId, mode: 'set', value: newStock }, getStockAuthPayload_());
-    if (thresholdInput) payload.lowStockThreshold = Number(thresholdInput.value) || 0;
+    if (thresholdInput) payload.lowStockThreshold = check.values.threshold;
     const r = await apiPost('setProductStock', payload);
     if (r.ok) {
       p.stock = r.newStock;
-      if (thresholdInput) p.lowStockThreshold = Number(thresholdInput.value) || 0;
+      if (thresholdInput) p.lowStockThreshold = check.values.threshold;
       toast('Stock updated for ' + p.name, 'success');
       renderInventoryTable(); refreshAllStockBadges(); loadInventoryLog_();
     } else toast(r.error || 'Failed to update stock', 'error');
@@ -4518,8 +5282,13 @@ function openShareModal(billId, titleText, shareData) {
   document.getElementById('shareEmailField').style.display = 'none';
   document.getElementById('shareWhatsappField').style.display = 'none';
   document.getElementById('share_send').style.display = 'none';
-  document.getElementById('share_email').value = '';
-  document.getElementById('share_phone').value = '';
+  // Pre-filled with the patient's own email / WhatsApp number (still fully
+  // editable) - saves retyping what's already on the bill.
+  const sd = shareData || {};
+  const sdMobile = normalizeMobile_(sd.phone);
+  document.getElementById('share_email').value = vEmail_(sd.email, 'Email', false).error ? '' : vLine_(sd.email);
+  document.getElementById('share_phone').value = /^[6-9]\d{9}$/.test(sdMobile) ? '91' + sdMobile : '';
+  clearErrorsIn_(document.getElementById('shareBillModal'));
   document.getElementById('shareStatus').textContent = '';
   document.getElementById('shareStatus').className = 'biller-status';
   shareMethod = null;
@@ -4610,12 +5379,14 @@ document.getElementById('share_send').addEventListener('click', async () => {
   const btn = document.getElementById('share_send');
 
   if (shareMethod === 'email') {
-    const email = document.getElementById('share_email').value.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      statusEl.textContent = 'Please enter a valid email address.';
+    const emailRes = vEmail_(document.getElementById('share_email').value, 'Patient email', true);
+    if (emailRes.error) {
+      setFieldError_(document.getElementById('share_email'), emailRes.error);
+      statusEl.textContent = emailRes.error;
       statusEl.className = 'biller-status err';
       return;
     }
+    const email = emailRes.value;
     btn.disabled = true; btn.textContent = 'Sending...';
     try {
       const r = await apiPost('emailBillPdf', { billId, email });
@@ -4642,12 +5413,18 @@ document.getElementById('share_send').addEventListener('click', async () => {
     }
 
   } else if (shareMethod === 'whatsapp') {
-    const phone = document.getElementById('share_phone').value.trim().replace(/[^\d]/g, '');
-    if (phone.length < 10) {
-      statusEl.textContent = 'Please enter a valid WhatsApp number with country code.';
+    // Digits only. A plain 10-digit Indian mobile gets 91 added; anything
+    // else must already be a full international number (11-15 digits).
+    const phone = waNumber_(document.getElementById('share_phone').value);
+    const validWa = /^91[6-9]\d{9}$/.test(phone) || (!/^91/.test(phone) && /^[1-9]\d{10,14}$/.test(phone));
+    if (!validWa) {
+      const msg = 'Enter the WhatsApp number as 10 digits, or with country code (e.g. 919876543210) - digits only.';
+      setFieldError_(document.getElementById('share_phone'), msg);
+      statusEl.textContent = msg;
       statusEl.className = 'biller-status err';
       return;
     }
+    document.getElementById('share_phone').value = phone;
     const msg = buildShareMessageText(billId, state.shareData);
     window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(msg), '_blank');
     statusEl.textContent = 'WhatsApp opened in a new tab - tap Send there to deliver it.';
@@ -4659,6 +5436,7 @@ document.getElementById('share_send').addEventListener('click', async () => {
 // 18. INIT - auto restore session on reload (per browser tab)
 // -------------------------------------------------------------------------
 (async function init() {
+  decorateInputs_(document);
   updatePaymentNote();
   // Theme the login screen itself from Admin Settings, even before anyone
   // is logged in - the CSS fallback colors only ever act as a backup if

@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>SJ Physiotherapy - Billing, Sales and Inventory Analysis System</title>
 <link rel="icon" href="https://sjphysiotherapy.in/LOGO/favicon.png" type="image/png">
-<link rel="stylesheet" href="style.css?v=20260917-33-letterpad-printtiming">
+<link rel="stylesheet" href="style.css?v=20261007-34-validation">
 </head>
 <body>
 
@@ -125,12 +125,12 @@
               </div>
               <div class="field">
                 <label>Patient Name <span style="color:var(--danger)">*</span></label>
-                <input id="f_customerName" type="text" placeholder="e.g. Ramesh Kumar">
+                <input id="f_customerName" type="text" maxlength="60" autocomplete="off" placeholder="e.g. Ramesh Kumar">
                 <div class="field-error">Patient name is required</div>
               </div>
               <div class="field">
                 <label>Phone Number <span style="color:var(--danger)">*</span></label>
-                <input id="f_phone" type="tel" placeholder="10-digit mobile number">
+                <input id="f_phone" type="tel" inputmode="numeric" autocomplete="off" placeholder="10-digit mobile number">
                 <div class="field-error">Valid phone number is required</div>
               </div>
               <div class="field">
@@ -568,7 +568,7 @@
       </div>
 
       <div class="lookup-search">
-        <input id="lookupBillId" type="text" placeholder="Enter Bill ID e.g. SJP-000012">
+        <input id="lookupBillId" type="text" autocomplete="off" placeholder="Bill ID - e.g. SJP-000012, or just 12">
         <button id="lookupBtn" class="btn btn-primary">Search</button>
       </div>
 
@@ -847,7 +847,7 @@
             </div>
             <div class="field">
               <label>Phone</label>
-              <input id="s_phone" type="text">
+              <input id="s_phone" type="tel" inputmode="numeric" placeholder="10 digits, digits only">
             </div>
             <div class="field span-2">
               <label>Address</label>
@@ -859,7 +859,7 @@
             </div>
             <div class="field">
               <label>GST Number</label>
-              <input id="s_gst" type="text">
+              <input id="s_gst" type="text" placeholder="e.g. 33ABCDE1234F1Z5">
             </div>
             <div class="field span-2">
               <label>Social Links (used only in the emailed invoice's footer)</label>
@@ -867,7 +867,7 @@
             </div>
             <div class="field">
               <label>WhatsApp Number</label>
-              <input id="s_socialWhatsapp" type="text" placeholder="9629495946">
+              <input id="s_socialWhatsapp" type="tel" inputmode="numeric" placeholder="10-digit number, e.g. 9629495946">
             </div>
             <div class="field">
               <label>Instagram URL</label>
@@ -937,11 +937,11 @@
             </div>
             <div class="field">
               <label>Account Number</label>
-              <input id="s_bankAccountNo" type="text">
+              <input id="s_bankAccountNo" type="text" inputmode="numeric" placeholder="9-18 digits">
             </div>
             <div class="field">
               <label>IFSC Code</label>
-              <input id="s_bankIFSC" type="text">
+              <input id="s_bankIFSC" type="text" placeholder="e.g. YESB0000123">
             </div>
             <div class="field">
               <label>Account Holder Name</label>
@@ -1532,8 +1532,8 @@
       <button type="button" class="btn btn-outline btn-sm" id="shareEmailPreviewBtn" style="margin-top:10px;">&#128065;&#65039; Preview Email</button>
     </div>
     <div class="field" id="shareWhatsappField" style="display:none;">
-      <label>WhatsApp Number (with country code, no + or spaces)</label>
-      <input id="share_phone" type="tel" placeholder="e.g. 919876543210">
+      <label>WhatsApp Number (10 digits, or with country code - digits only)</label>
+      <input id="share_phone" type="tel" inputmode="numeric" placeholder="e.g. 9876543210">
     </div>
     <div id="shareStatus" class="biller-status"></div>
     <div class="modal-actions">
@@ -1631,6 +1631,6 @@
 
 <div class="toast-wrap" id="toastWrap"></div>
 
-<script src="app.js?v=20260917-33-letterpad-printtiming"></script>
+<script src="app.js?v=20261007-34-validation"></script>
 </body>
 </html>

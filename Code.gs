@@ -37,7 +37,7 @@ const SHEET = {
 // to prove whether a NEW DEPLOYMENT actually picked up your latest code
 // (saving the file alone does NOT update the live /exec URL - see
 // Deploy > Manage deployments > pencil icon > Version: New version > Deploy).
-const BACKEND_BUILD = 'SJP-2026-09-16-01-LETTERPAD';
+const BACKEND_BUILD = 'SJP-2026-10-07-01-VALIDATION';
 
 // ---------------------------------------------------------------------------
 // 0b. SCHEMA MIGRATIONS - runs automatically on every request (cheap
@@ -492,6 +492,252 @@ function requireSession_(token) {
 }
 
 // ---------------------------------------------------------------------------
+// 1c. INPUT RULES - the server-side source of truth for what every field is
+//     allowed to hold. app.js applies the SAME rules while typing (see
+//     INPUT_RULES there) so people get instant feedback - but the browser
+//     can always be bypassed (old cached tab, direct API call), so every
+//     write below is re-checked here before it ever reaches the sheet.
+//
+//     LEGACY DATA IS NEVER BROKEN BY THIS: rules only apply to values being
+//     written now. Old rows are never re-read and rejected, edits only check
+//     the fields that actually changed, and a few "accept what already
+//     exists" escapes (e.g. a product name already in the Products sheet)
+//     keep older data fully billable.
+// ---------------------------------------------------------------------------
+const VR = {
+  // Letters in ANY language (incl. Tamil, which needs the \p{M} combining
+  // marks), spaces, dot, apostrophe, hyphen. Must start with a letter.
+  PERSON_NAME: /^[\p{L}\p{M}][\p{L}\p{M} .'\-]*$/u,
+  // Services/treatments: letters, digits and the few symbols real product
+  // names use - "Idly Batter (1kg)", "Knee & Back - 30 min", "10% pack".
+  PRODUCT_NAME: /^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N} ()\-\/.,&+'%#:]*$/u,
+  ADDRESS: /^[\p{L}\p{M}\p{N} \n,.\-\/#():'&]*$/u,
+  ORG_NAME: /^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N} .,&'()\-]*$/u,
+  EMAIL: /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}$/,
+  GSTIN: /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/,
+  IFSC: /^[A-Z]{4}0[A-Z0-9]{6}$/,
+  ACCOUNT_NO: /^\d{9,18}$/,
+  HEX_COLOR: /^#[0-9A-Fa-f]{6}$/,
+  WEBSITE: /^(https?:\/\/)?[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+(\/[^\s<>"']*)?$/,
+  URL: /^https?:\/\/[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+(:\d+)?(\/[^\s<>"']*)?$/,
+  ADMIN_USER: /^[\p{L}\p{N}][\p{L}\p{N} ._\-@]*$/u
+};
+const VLIMIT = {
+  MONEY_MAX: 10000000, QTY_MAX: 9999, STOCK_MAX: 999999, THRESHOLD_MAX: 99999,
+  ITEMS_MAX: 100, ADDRESS_MAX: 250, NOTE_MAX: 200
+};
+const PAYMENT_METHODS = ['Cash', 'Bank'];
+const PAYMENT_STATUSES = ['Cash Collected', 'Pending', 'Paid', 'Failed'];
+
+function vRes_(value, error) { return { value: value, error: error || '' }; }
+
+// Removes control characters (keeps \n) - pasted text from WhatsApp/Word
+// often carries invisible ones that later break matching and exports.
+function vText_(v) {
+  return String(v == null ? '' : v).replace(/[\u0000-\u0009\u000B-\u001F\u007F​-‍﻿]/g, '');
+}
+function vLine_(v) { return vText_(v).replace(/\s+/g, ' ').trim(); }
+function vMulti_(v) {
+  return vText_(v).split('\n').map(function (l) { return l.replace(/\s+/g, ' ').trim(); })
+    .join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// Phone numbers are stored as bare digits. Older rows may hold
+// "+91 98765 43210", "919876543210" or "09876543210" - all of these reduce
+// to the same 10 digits, so matching and validation treat them as equal.
+function normalizeMobile_(v) {
+  let d = String(v == null ? '' : v).replace(/\D/g, '');
+  if (d.length === 12 && d.indexOf('91') === 0) d = d.slice(2);
+  else if (d.length === 11 && d.charAt(0) === '0') d = d.slice(1);
+  return d;
+}
+function vMobile_(raw, label, required) {
+  if (!String(raw == null ? '' : raw).trim()) return vRes_('', required ? label + ' is required.' : '');
+  const d = normalizeMobile_(raw);
+  if (!/^[6-9]\d{9}$/.test(d)) {
+    return vRes_(d, label + ' must be a 10-digit mobile number starting with 6, 7, 8 or 9 (digits only - no spaces, letters or symbols).');
+  }
+  return vRes_(d);
+}
+// The shop's own phone may be a landline with an STD code (0422xxxxxxx).
+function vShopPhone_(raw, label) {
+  if (!String(raw == null ? '' : raw).trim()) return vRes_('');
+  let d = String(raw).replace(/\D/g, '');
+  if (d.length === 12 && d.indexOf('91') === 0) d = d.slice(2);
+  if (!/^(\d{10}|0\d{10})$/.test(d)) return vRes_(d, label + ' must be 10 digits (or 11 digits for a landline starting with 0) - digits only.');
+  return vRes_(d);
+}
+function vPersonName_(raw, label, required) {
+  const v = vLine_(raw);
+  if (!v) return vRes_(v, required ? label + ' is required.' : '');
+  if (v.length < 2 || v.length > 60) return vRes_(v, label + ' must be 2 to 60 characters.');
+  if (!VR.PERSON_NAME.test(v)) return vRes_(v, label + ' can only contain letters, spaces, dot (.), apostrophe (\') and hyphen (-).');
+  return vRes_(v);
+}
+function vEmail_(raw, label, required) {
+  const v = vLine_(raw).replace(/\s/g, '');
+  if (!v) return vRes_(v, required ? label + ' is required.' : '');
+  if (v.length > 100 || v.indexOf('..') !== -1 || !VR.EMAIL.test(v)) return vRes_(v, label + ' is not a valid email address (e.g. name@example.com).');
+  return vRes_(v);
+}
+function vAddress_(raw, label) {
+  const v = vMulti_(raw);
+  if (!v) return vRes_(v);
+  if (v.length > VLIMIT.ADDRESS_MAX) return vRes_(v, label + ' must be at most ' + VLIMIT.ADDRESS_MAX + ' characters.');
+  if (!VR.ADDRESS.test(v)) return vRes_(v, label + ' can only contain letters, numbers, spaces and  , . - / # ( ) : \' &');
+  if (!/[\p{L}\p{N}]/u.test(v)) return vRes_(v, label + ' must contain letters or numbers.');
+  return vRes_(v);
+}
+function vProductName_(raw, label) {
+  const v = vLine_(raw);
+  if (!v) return vRes_(v, label + ' is required.');
+  if (v.length < 2 || v.length > 80) return vRes_(v, label + ' must be 2 to 80 characters.');
+  if (!VR.PRODUCT_NAME.test(v)) return vRes_(v, label + ' must start with a letter or number and can only use letters, numbers, spaces and  ( ) - / . , & + \' % # :');
+  return vRes_(v);
+}
+function vFreeText_(raw, label, maxLen, required, minLen) {
+  const v = vLine_(raw).replace(/[<>]/g, '');
+  if (!v) return vRes_(v, required ? label + ' is required.' : '');
+  if (minLen && v.length < minLen) return vRes_(v, label + ' must be at least ' + minLen + ' characters.');
+  if (v.length > maxLen) return vRes_(v, label + ' must be at most ' + maxLen + ' characters.');
+  return vRes_(v);
+}
+function vPattern_(raw, label, re, maxLen, hint, transform) {
+  let v = vLine_(raw);
+  if (transform) v = transform(v);
+  if (!v) return vRes_(v);
+  if (v.length > maxLen || !re.test(v)) return vRes_(v, label + ' ' + hint);
+  return vRes_(v);
+}
+// Accepts "instagram.com/x" and quietly adds https:// rather than rejecting.
+function vUrl_(raw, label) {
+  let v = vLine_(raw).replace(/\s/g, '');
+  if (!v) return vRes_(v);
+  if (!/^https?:\/\//i.test(v)) v = 'https://' + v;
+  if (v.length > 300 || !VR.URL.test(v)) return vRes_(v, label + ' is not a valid link (e.g. https://example.com/page).');
+  return vRes_(v);
+}
+function vNumber_(raw, label, opts) {
+  opts = opts || {};
+  const min = opts.min != null ? opts.min : 0;
+  const max = opts.max != null ? opts.max : VLIMIT.MONEY_MAX;
+  if (raw === '' || raw == null) {
+    if (opts.required) return vRes_(null, label + ' is required.');
+    return vRes_(opts.blank !== undefined ? opts.blank : 0);
+  }
+  const s = String(raw).trim();
+  if (!/^-?\d+(\.\d+)?$/.test(s) && typeof raw !== 'number') return vRes_(null, label + ' must be a number.');
+  const n = Number(raw);
+  if (!isFinite(n)) return vRes_(null, label + ' must be a number.');
+  if (opts.integer && Math.floor(n) !== n) return vRes_(null, label + ' must be a whole number.');
+  if (n < min) return vRes_(null, label + ' cannot be less than ' + min + '.');
+  if (n > max) return vRes_(null, label + ' cannot be more than ' + max + '.');
+  return vRes_(opts.integer ? n : Math.round(n * 100) / 100);
+}
+function vMoney_(raw, label, required) { return vNumber_(raw, label, { min: 0, max: VLIMIT.MONEY_MAX, required: required }); }
+function vPercent_(raw, label) { return vNumber_(raw, label, { min: 0, max: 100 }); }
+function vInt_(raw, label, min, max, required, blank) {
+  return vNumber_(raw, label, { min: min, max: max, integer: true, required: required, blank: blank });
+}
+function vPassword_(raw, label, minLen, required) {
+  const v = String(raw == null ? '' : raw);
+  if (!v) return vRes_(v, required ? label + ' is required.' : '');
+  if (/\s/.test(v)) return vRes_(v, label + ' cannot contain spaces.');
+  if (v.length < minLen || v.length > 30) return vRes_(v, label + ' must be ' + minLen + ' to 30 characters.');
+  return vRes_(v);
+}
+// Bill date: a real calendar date, not before 2000, never in the future
+// (one day of slack so a time-zone edge near midnight never blocks a bill).
+function vDate_(raw, label) {
+  const v = String(raw == null ? '' : raw).trim();
+  if (!v) return vRes_(v, label + ' is required.');
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return vRes_(v, label + ' must be a valid date.');
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (d.getFullYear() !== Number(m[1]) || d.getMonth() !== Number(m[2]) - 1 || d.getDate() !== Number(m[3])) {
+    return vRes_(v, label + ' must be a valid date.');
+  }
+  if (v < '2000-01-01') return vRes_(v, label + ' is too far in the past.');
+  const tomorrow = Utilities.formatDate(new Date(Date.now() + 86400000), 'Asia/Kolkata', 'yyyy-MM-dd');
+  if (v > tomorrow) return vRes_(v, label + ' cannot be in the future.');
+  return vRes_(v);
+}
+function vOneOf_(raw, label, allowed) {
+  const v = String(raw == null ? '' : raw).trim();
+  if (allowed.indexOf(v) === -1) return vRes_(v, label + ' is not a valid choice.');
+  return vRes_(v);
+}
+
+// Validates a bill's line items. `knownNames` (lower-cased) are names that
+// already exist - in the Products sheet, or on the bill being edited - and
+// are accepted as-is even if they predate the naming rules, so an older
+// product can always still be billed.
+function vItems_(items, knownNames) {
+  if (!Array.isArray(items) || !items.length) return { error: 'Add at least one service/treatment.' };
+  if (items.length > VLIMIT.ITEMS_MAX) return { error: 'A bill can have at most ' + VLIMIT.ITEMS_MAX + ' lines.' };
+  const out = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i] || {};
+    const line = 'line ' + (i + 1);
+    let name = vLine_(it.name);
+    if (!name || !knownNames || !knownNames[name.toLowerCase()]) {
+      const r = vProductName_(it.name, 'Service/Treatment name on ' + line);
+      if (r.error) return { error: r.error };
+      name = r.value;
+    }
+    const price = vMoney_(it.price, 'Price on ' + line, true);
+    if (price.error) return { error: price.error };
+    const qty = vInt_(it.qty, 'Qty on ' + line, 1, VLIMIT.QTY_MAX, true);
+    if (qty.error) return { error: qty.error };
+    const disc = vPercent_(it.discountPercent != null ? it.discountPercent : 0, 'Discount % on ' + line);
+    if (disc.error) return { error: disc.error };
+    out.push({ name: name, price: price.value, qty: qty.value, discountPercent: disc.value });
+  }
+  return { items: out };
+}
+
+// Runs a list of [field, result] checks and returns the first error, or the
+// cleaned values keyed by field.
+function vCollect_(checks) {
+  const values = {};
+  for (let i = 0; i < checks.length; i++) {
+    if (checks[i][1].error) return { ok: false, error: checks[i][1].error, field: checks[i][0] };
+    values[checks[i][0]] = checks[i][1].value;
+  }
+  return { ok: true, values: values };
+}
+
+// Google Sheets treats any text starting with = + - @ as a FORMULA when it
+// is written. A patient address like "+2nd floor" would turn into #ERROR!,
+// and a crafted "=IMPORTXML(...)" would run. A leading apostrophe forces
+// plain text; Sheets hides it and never returns it when the cell is read,
+// so the stored value is exactly what was typed.
+function cellSafe_(v) {
+  if (typeof v !== 'string') return v;
+  return /^[=+\-@]/.test(v) ? "'" + v : v;
+}
+
+// Forces a value to be stored as TEXT. Without this, Sheets turns a
+// password like "0123" into the number 123 - and that person can never log
+// in again because "0123" no longer equals what's stored.
+function asText_(v) { return "'" + String(v); }
+
+// For values READ from a sheet and written straight back: text stays text
+// (a stored "0123" must not come back as the number 123, "TRUE" must not
+// become a boolean), numbers/booleans/dates stay exactly what they were.
+function keepType_(v) { return (typeof v === 'string' && v !== '') ? "'" + v : v; }
+
+function productNameIndex_() {
+  const sh = ss_().getSheetByName(SHEET.PRODUCTS);
+  const data = sh.getDataRange().getValues();
+  const idx = {};
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][1]) idx[String(data[i][1]).trim().toLowerCase()] = true;
+  }
+  return idx;
+}
+
+// ---------------------------------------------------------------------------
 // 2. SETTINGS HELPERS
 // ---------------------------------------------------------------------------
 function getSettingsMap_() {
@@ -516,7 +762,42 @@ function setSetting_(key, value) {
   sh.appendRow([key, value]);
 }
 
+// Writes many settings in ONE read + one write per existing row block,
+// instead of re-reading the whole Settings sheet for every single key
+// (Save Theme alone used to make ~120 separate sheet calls this way).
+// Row positions and key names are untouched - existing rows are updated in
+// place, missing keys are appended at the bottom, exactly like setSetting_.
+function setSettings_(map) {
+  const keys = Object.keys(map || {});
+  if (!keys.length) return;
+  const sh = ss_().getSheetByName(SHEET.SETTINGS);
+  const lastRow = sh.getLastRow();
+  const colA = lastRow > 0 ? sh.getRange(1, 1, lastRow, 1).getValues() : [];
+  const colB = lastRow > 0 ? sh.getRange(1, 2, lastRow, 1).getValues() : [];
+  const rowOf = {};
+  for (let i = 1; i < colA.length; i++) {
+    if (colA[i][0] !== '' && rowOf[colA[i][0]] === undefined) rowOf[colA[i][0]] = i;
+  }
+  const toAppend = [];
+  let changed = false;
+  keys.forEach(function (k) {
+    const v = cellSafe_(map[k]);
+    if (rowOf[k] !== undefined) { colB[rowOf[k]][0] = v; changed = true; }
+    else toAppend.push([k, v]);
+  });
+  if (changed) sh.getRange(1, 2, colB.length, 1).setValues(colB);
+  if (toAppend.length) sh.getRange(lastRow + 1, 1, toAppend.length, 2).setValues(toAppend);
+}
+
+// Memoised for the life of ONE request. SpreadsheetApp.openById() is a slow
+// network call and ss_() is used by nearly every helper - a single bill save
+// used to open the same spreadsheet a dozen-plus times. Anything that
+// switches the active spreadsheet calls resetSsCache_() right after.
+let SS_CACHE_ = null;
+function resetSsCache_() { SS_CACHE_ = null; }
+
 function ss_() {
+  if (SS_CACHE_) return SS_CACHE_;
   // If ACTIVE_SPREADSHEET_ID has been set (see archiveCurrentSpreadsheetAndSwitch_
   // below), every read/write goes to THAT spreadsheet by ID instead of the
   // one this script happens to be bound to. Until you ever run that
@@ -525,12 +806,14 @@ function ss_() {
   const activeId = PropertiesService.getScriptProperties().getProperty('ACTIVE_SPREADSHEET_ID');
   if (activeId) {
     try {
-      return SpreadsheetApp.openById(activeId);
+      SS_CACHE_ = SpreadsheetApp.openById(activeId);
+      return SS_CACHE_;
     } catch (e) {
       throw new Error('ACTIVE_SPREADSHEET_ID is set to "' + activeId + '" but that spreadsheet could not be opened (' + e + '). Check the ID is correct and this script\'s account still has access to it.');
     }
   }
-  return SpreadsheetApp.getActiveSpreadsheet();
+  SS_CACHE_ = SpreadsheetApp.getActiveSpreadsheet();
+  return SS_CACHE_;
 }
 
 // ---------------------------------------------------------------------------
@@ -598,7 +881,7 @@ function archiveCurrentSpreadsheetAndSwitch_(newSpreadsheetId, archiveLabel) {
   const label = archiveLabel || ('Archived ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Etc/UTC', 'yyyy-MM-dd'));
   registry.push({ id: currentActiveId, label: label, archivedAt: new Date().toISOString() });
   props.setProperty('ARCHIVE_SPREADSHEET_IDS', JSON.stringify(registry));
-  props.setProperty('ACTIVE_SPREADSHEET_ID', newSpreadsheetId);
+  props.setProperty('ACTIVE_SPREADSHEET_ID', newSpreadsheetId); resetSsCache_();
 
   SpreadsheetApp.getUi().alert(
     'Switched!\n\n' +
@@ -617,7 +900,7 @@ function undoLastArchiveSwitch_() {
   if (!registry.length) { SpreadsheetApp.getUi().alert('There is no archive switch to undo.'); return; }
   const last = registry.pop();
   props.setProperty('ARCHIVE_SPREADSHEET_IDS', JSON.stringify(registry));
-  props.setProperty('ACTIVE_SPREADSHEET_ID', last.id);
+  props.setProperty('ACTIVE_SPREADSHEET_ID', last.id); resetSsCache_();
   SpreadsheetApp.getUi().alert('Reverted - the active spreadsheet is back to "' + last.label + '".');
 }
 
@@ -708,7 +991,9 @@ function copyMasterDataForward_(fromSs, toSs) {
     if (!fromSh || !toSh) return;
     const data = fromSh.getDataRange().getValues();
     if (data.length <= 1) return; // header only - nothing to carry over
-    const rows = data.slice(1);
+    // keepType_: a text password "0123" or phone "+91..." must arrive in the
+    // new database exactly as it was - not as the number 123 / a formula.
+    const rows = data.slice(1).map(function (row) { return row.map(keepType_); });
     const numCols = data[0].length;
     if (toSh.getLastRow() > 1) {
       toSh.getRange(2, 1, toSh.getLastRow() - 1, toSh.getLastColumn()).clearContent();
@@ -742,7 +1027,7 @@ function apiAutoExpandDatabase(p) {
     const registry = getArchiveRegistry_();
     registry.push({ id: oldId, label: label, archivedAt: new Date().toISOString() });
     props.setProperty('ARCHIVE_SPREADSHEET_IDS', JSON.stringify(registry));
-    props.setProperty('ACTIVE_SPREADSHEET_ID', newSs.getId());
+    props.setProperty('ACTIVE_SPREADSHEET_ID', newSs.getId()); resetSsCache_();
     // The new spreadsheet was just provisioned with today's schema, so it's
     // already fully caught up - keeps migrateSchema_() from doing any
     // redundant work on the very next request.
@@ -1033,23 +1318,97 @@ function apiUpdateSettings(p) {
   const auth = requireSuperAdmin_(p.superAdminUser, p.superAdminPass);
   if (!auth.ok) return auth;
   // Allow empty string so fields like PrintLogoURL can be cleared intentionally.
-  const fields = [
-    'CompanyName', 'Address', 'Phone', 'Website', 'GSTNumber',
-    'LogoURL', 'PrintLogoURL',
-    'CompanyEmail', 'CGSTPercent', 'SGSTPercent',
-    'BankName', 'BankAccountNo', 'BankIFSC', 'BankAccountHolder',
-    'AuthorizedSignatoryLabel',
-    'ShowCompanyEmail', 'ShowTaxOnBill', 'ShowBankDetails', 'ShowDiscountOption', 'ShowAuthorizedSignatory',
+  const upper = function (v) { return v.toUpperCase().replace(/\s/g, ''); };
+  const boolField = function (label) {
+    return function (raw) { return vOneOf_(String(raw).toUpperCase(), label, ['TRUE', 'FALSE']); };
+  };
+  const validators = {
+    CompanyName: function (v) { return vFreeText_(v, 'Company Name', 80, true, 2); },
+    Address: function (v) { return vAddress_(v, 'Address'); },
+    Phone: function (v) { return vShopPhone_(v, 'Phone'); },
+    Website: function (v) { return vPattern_(v, 'Website', VR.WEBSITE, 100, 'is not a valid website (e.g. www.example.com).', function (x) { return x.replace(/\s/g, ''); }); },
+    GSTNumber: function (v) { return vPattern_(v, 'GST Number', VR.GSTIN, 15, 'must be a valid 15-character GSTIN (e.g. 33ABCDE1234F1Z5).', upper); },
+    LogoURL: function (v) { return vUrl_(v, 'App Logo URL'); },
+    PrintLogoURL: function (v) { return vUrl_(v, 'Print Bill Logo URL'); },
+    CompanyEmail: function (v) { return vEmail_(v, 'Company Email', false); },
+    CGSTPercent: function (v) { return vPercent_(v, 'CGST %'); },
+    SGSTPercent: function (v) { return vPercent_(v, 'SGST %'); },
+    BankName: function (v) { return vPattern_(v, 'Bank Name', VR.ORG_NAME, 60, 'can only contain letters, numbers, spaces and . , & \' ( ) -'); },
+    BankAccountNo: function (v) { return vPattern_(v, 'Account Number', VR.ACCOUNT_NO, 18, 'must be 9 to 18 digits (digits only).', function (x) { return x.replace(/\s/g, ''); }); },
+    BankIFSC: function (v) { return vPattern_(v, 'IFSC Code', VR.IFSC, 11, 'must be a valid 11-character IFSC (e.g. YESB0000123).', upper); },
+    BankAccountHolder: function (v) { return vPattern_(v, 'Account Holder Name', VR.ORG_NAME, 80, 'can only contain letters, numbers, spaces and . , & \' ( ) -'); },
+    AuthorizedSignatoryLabel: function (v) { return vFreeText_(v, 'Signatory Label', 40, false); },
+    ShowCompanyEmail: boolField('Show Company Email'),
+    ShowTaxOnBill: boolField('Allow tax'),
+    ShowBankDetails: boolField('Show bank details'),
+    ShowDiscountOption: boolField('Allow discounts'),
+    ShowAuthorizedSignatory: boolField('Show signature box'),
     // Optional - only ever shown in the emailed invoice's footer, and only
     // the ones actually filled in. Leave blank to omit that icon entirely.
-    'SocialWhatsApp', 'SocialInstagram', 'SocialFacebook', 'SocialLinkedIn', 'SocialYouTube'
-  ];
-  fields.forEach(f => {
-    if (p[f] !== undefined && p[f] !== null) setSetting_(f, p[f]);
-  });
-  if (p.newSuperAdminUser) setSetting_('SuperAdminUser', p.newSuperAdminUser);
-  if (p.newSuperAdminPass) setSetting_('SuperAdminPass', p.newSuperAdminPass);
+    SocialWhatsApp: function (v) { return vMobile_(v, 'WhatsApp Number', false); },
+    SocialInstagram: function (v) { return vUrl_(v, 'Instagram URL'); },
+    SocialFacebook: function (v) { return vUrl_(v, 'Facebook URL'); },
+    SocialLinkedIn: function (v) { return vUrl_(v, 'LinkedIn URL'); },
+    SocialYouTube: function (v) { return vUrl_(v, 'YouTube URL'); }
+  };
+
+  // Only fields whose value actually CHANGED are validated - an older value
+  // saved before these rules existed never blocks saving something else.
+  const current = getSettingsMap_();
+  const toWrite = {};
+  const keys = Object.keys(validators);
+  for (let i = 0; i < keys.length; i++) {
+    const f = keys[i];
+    if (p[f] === undefined || p[f] === null) continue;
+    if (String(p[f]) === String(current[f] == null ? '' : current[f])) continue;
+    const r = validators[f](p[f]);
+    if (r.error) return { ok: false, error: r.error, field: f };
+    toWrite[f] = r.value;
+  }
+
+  if (p.newSuperAdminUser) {
+    const u = vLine_(p.newSuperAdminUser);
+    if (u.length < 3 || u.length > 40 || !VR.ADMIN_USER.test(u)) {
+      return { ok: false, error: 'New Super Admin username must be 3 to 40 characters - letters, numbers, spaces and . _ - @ only.', field: 'newSuperAdminUser' };
+    }
+    toWrite.SuperAdminUser = asText_(u);
+  }
+  if (p.newSuperAdminPass) {
+    const pw = vPassword_(p.newSuperAdminPass, 'New Super Admin password', 6, true);
+    if (pw.error) return { ok: false, error: pw.error, field: 'newSuperAdminPass' };
+    toWrite.SuperAdminPass = asText_(pw.value);
+  }
+  setSettings_(toWrite);
   return { ok: true };
+}
+
+// Theme values are validated by KIND, inferred from each key's own default
+// in THEME_SETTING_DEFAULTS - so a new theme option added there is covered
+// automatically. This stops a crafted request from injecting arbitrary CSS
+// into every user's screen (theme values are written straight into CSS).
+const THEME_STYLES_ = ['solid', 'gradient-diagonal', 'gradient-vertical', 'gradient-horizontal'];
+function vThemeValue_(key, raw, def) {
+  const v = String(raw == null ? '' : raw).trim();
+  if (VR.HEX_COLOR.test(def)) return VR.HEX_COLOR.test(v) ? vRes_(v) : vRes_(v, key + ' must be a colour like #1A2B3C.');
+  if (def === 'TRUE' || def === 'FALSE') return vOneOf_(v.toUpperCase(), key, ['TRUE', 'FALSE']);
+  if (/Style$/.test(key)) return vOneOf_(v, key, THEME_STYLES_);
+  if (key === 'ThemeBillHeaderLayout') return vOneOf_(v, key, ['logo-side', 'logo-top']);
+  if (key === 'ThemeBillLogoWidth' || key === 'ThemeBillLogoHeight') {
+    const n = vInt_(Math.round(Number(v)), 'Logo size', 20, 400, true);
+    return n.error ? n : vRes_(String(n.value));
+  }
+  if (key === 'ThemeChartPalette') {
+    const parts = v.split(',').map(function (c) { return c.trim(); }).filter(Boolean);
+    if (!parts.length || parts.length > 12 || parts.some(function (c) { return !VR.HEX_COLOR.test(c); })) {
+      return vRes_(v, 'Chart colours must be 1 to 12 colours like #1A2B3C.');
+    }
+    return vRes_(parts.join(','));
+  }
+  if (key === 'ThemeBillFontFamily') {
+    if (!v || v.length > 120 || /[;{}<>\\]/.test(v)) return vRes_(v, 'Bill font is not valid.');
+    return vRes_(v);
+  }
+  return /[;{}<>\\]/.test(v) || v.length > 120 ? vRes_(v, key + ' is not valid.') : vRes_(v);
 }
 
 // ---------------------------------------------------------------------------
@@ -1066,17 +1425,26 @@ function apiUpdateTheme(p) {
   // that list here (instead of a second hand-maintained array) means a new
   // theme option added there is automatically accepted by Save, with
   // nothing else to remember to update.
-  THEME_SETTING_DEFAULTS.forEach(function (pair) {
-    const f = pair[0];
-    if (p[f] !== undefined && p[f] !== null && p[f] !== '') setSetting_(f, p[f]);
-  });
+  const current = getSettingsMap_();
+  const toWrite = {};
+  for (let i = 0; i < THEME_SETTING_DEFAULTS.length; i++) {
+    const f = THEME_SETTING_DEFAULTS[i][0];
+    if (p[f] === undefined || p[f] === null || p[f] === '') continue;
+    if (String(p[f]) === String(current[f] == null ? '' : current[f])) continue;
+    const r = vThemeValue_(f, p[f], THEME_SETTING_DEFAULTS[i][1]);
+    if (r.error) return { ok: false, error: r.error, field: f };
+    toWrite[f] = r.value;
+  }
+  setSettings_(toWrite);
   return { ok: true };
 }
 
 function apiResetTheme(p) {
   const auth = requireSuperAdmin_(p.superAdminUser, p.superAdminPass);
   if (!auth.ok) return auth;
-  THEME_SETTING_DEFAULTS.forEach(pair => setSetting_(pair[0], pair[1]));
+  const map = {};
+  THEME_SETTING_DEFAULTS.forEach(pair => { map[pair[0]] = pair[1]; });
+  setSettings_(map);
   return { ok: true };
 }
 
@@ -1189,16 +1557,20 @@ function apiGetCustomersList() {
 // 5. CUSTOMERS
 // ---------------------------------------------------------------------------
 function apiFindCustomer(phone, name) {
+  // Phones are compared as normalised 10-digit numbers, so a patient saved
+  // long ago as "+91 98765 43210" (or stored by Sheets as the NUMBER
+  // 9876543210) still matches "9876543210" typed today - instead of quietly
+  // creating a duplicate Patient ID for the same person.
+  const wantPhone = normalizeMobile_(phone);
+  const wantName = vLine_(name).toLowerCase();
   const sh = ss_().getSheetByName(SHEET.CUSTOMERS);
   const data = sh.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    const rowPhone = String(row[2] || '').trim();
-    const rowName = String(row[1] || '').trim().toLowerCase();
-    if (phone && rowPhone && rowPhone === String(phone).trim()) {
-      return { ok: true, found: true, customer: rowToCustomer_(row) };
-    }
-    if (!phone && name && rowName === String(name).trim().toLowerCase()) {
+    if (!row[0]) continue;
+    if (wantPhone) {
+      if (normalizeMobile_(row[2]) === wantPhone) return { ok: true, found: true, customer: rowToCustomer_(row) };
+    } else if (wantName && vLine_(row[1]).toLowerCase() === wantName) {
       return { ok: true, found: true, customer: rowToCustomer_(row) };
     }
   }
@@ -1212,17 +1584,35 @@ function rowToCustomer_(row) {
   };
 }
 
+// Validates/cleans the patient fields shared by a new bill and a direct
+// saveCustomer call. Returns { ok, values } or { ok:false, error, field }.
+function validatePatientFields_(p) {
+  return vCollect_([
+    ['customerName', vPersonName_(p.customerName, 'Patient Name', true)],
+    ['phone', vMobile_(p.phone, 'Phone Number', true)],
+    ['email', vEmail_(p.email, 'Email', false)],
+    ['address', vAddress_(p.address, 'Address')],
+    ['deliveryAddress', vAddress_(p.deliveryAddress, 'Delivery Address')]
+  ]);
+}
+
 // skipLock=true when the caller (apiSaveBill) already holds the script
 // lock for its whole transaction - see the note on nextSequentialId_.
+// When called that way the fields have already been validated by the caller.
 function apiSaveCustomer(p, skipLock) {
+  if (!skipLock) {
+    const check = validatePatientFields_(p);
+    if (!check.ok) return check;
+    p = Object.assign({}, p, check.values);
+  }
   const doWork = () => {
     const sh = ss_().getSheetByName(SHEET.CUSTOMERS);
     const id = nextId_(sh, 'PAT');
     // NOTE: the bill-save payload's field is "customerName" (matching the
     // Bills sheet), not "name" - this used to read p.name here, which is
     // always undefined, so every new customer was saved with a blank name.
-    sh.appendRow([id, p.customerName || '', p.phone || '', p.email || '', p.address || '',
-                  p.deliveryAddress || '', new Date()]);
+    sh.appendRow([id, cellSafe_(p.customerName || ''), p.phone || '', cellSafe_(p.email || ''), cellSafe_(p.address || ''),
+                  cellSafe_(p.deliveryAddress || ''), new Date()]);
     return { ok: true, customerId: id };
   };
   if (skipLock) return doWork();
@@ -1231,21 +1621,39 @@ function apiSaveCustomer(p, skipLock) {
   try { return doWork(); } finally { lock.releaseLock(); }
 }
 
-function updateCustomerIfChanged_(customerId, p) {
+// Returns true if the patient exists (and was refreshed), false otherwise.
+// With requirePhoneMatch, a patient whose stored phone differs from p.phone
+// is NOT touched and false is returned - so a Patient ID left over in the
+// form after the phone number was changed can never attach a bill to (or
+// overwrite the details of) the wrong patient.
+function updateCustomerIfChanged_(customerId, p, requirePhoneMatch) {
   const sh = ss_().getSheetByName(SHEET.CUSTOMERS);
   const data = sh.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(customerId)) {
+      if (requirePhoneMatch) {
+        const stored = normalizeMobile_(data[i][2]);
+        if (stored && stored !== normalizeMobile_(p.phone)) return false;
+      }
       // Only overwrite a field when a new value was actually provided -
       // this also opportunistically repairs a blank Name left over from
       // the bug above, without ever erasing a name that's already there.
-      sh.getRange(i + 1, 2).setValue(p.customerName || data[i][1]);
-      sh.getRange(i + 1, 4).setValue(p.email || data[i][3]);
-      sh.getRange(i + 1, 5).setValue(p.address || data[i][4]);
-      sh.getRange(i + 1, 6).setValue(p.deliveryAddress || data[i][5]);
-      return;
+      // Phone (column C) is the patient's identity and is never changed here.
+      // Kept values are written back with their original type (keepType_),
+      // new ones are formula-safe - a legacy "+91 98765 43210" stays text.
+      const next = [
+        p.customerName ? cellSafe_(p.customerName) : keepType_(data[i][1]),
+        keepType_(data[i][2]),
+        p.email ? cellSafe_(p.email) : keepType_(data[i][3]),
+        p.address ? cellSafe_(p.address) : keepType_(data[i][4]),
+        p.deliveryAddress ? cellSafe_(p.deliveryAddress) : keepType_(data[i][5])
+      ];
+      const same = next.every((v, k) => String(v).replace(/^'/, '') === String(data[i][k + 1]));
+      if (!same) sh.getRange(i + 1, 2, 1, 5).setValues([next]); // one write instead of four
+      return true;
     }
   }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1276,19 +1684,51 @@ function apiGetProducts(includeInactive) {
   return { ok: true, products: products };
 }
 
+// Validates the editable product fields. `excludeId` lets an update keep its
+// own name; any OTHER product (active or inactive) with the same name is a
+// duplicate - stock is matched by name, so two identical names would make
+// one product's sales silently drain the other's stock.
+function validateProductFields_(p, existing, excludeId) {
+  let name;
+  const typed = vLine_(p.name);
+  if (existing && typed === vLine_(existing.name)) {
+    name = vRes_(typed); // unchanged legacy name - always accepted as-is
+  } else {
+    name = vProductName_(p.name, 'Service/Treatment name');
+  }
+  if (name.error) return { ok: false, error: name.error, field: 'name' };
+  const sh = ss_().getSheetByName(SHEET.PRODUCTS);
+  const data = sh.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (excludeId != null && String(data[i][0]) === String(excludeId)) continue;
+    if (vLine_(data[i][1]).toLowerCase() === name.value.toLowerCase()) {
+      const isActive = data[i][3] === true || String(data[i][3]).toUpperCase() === 'TRUE';
+      return { ok: false, field: 'name', error: '"' + vLine_(data[i][1]) + '" already exists in the list' + (isActive ? '.' : ' (currently inactive - switch it back on in Admin Settings > Products).') };
+    }
+  }
+  const price = vMoney_(p.defaultPrice, 'Default Price', false);
+  if (price.error) return { ok: false, error: price.error, field: 'defaultPrice' };
+  const stock = vInt_(p.stock, 'Stock', 0, VLIMIT.STOCK_MAX, false, '');
+  if (stock.error) return { ok: false, error: stock.error, field: 'stock' };
+  const thr = vInt_(p.lowStockThreshold, 'Low Stock Alert', 0, VLIMIT.THRESHOLD_MAX, false, '');
+  if (thr.error) return { ok: false, error: thr.error, field: 'lowStockThreshold' };
+  return { ok: true, name: name.value, defaultPrice: price.value, stock: stock.value, lowStockThreshold: thr.value };
+}
+
 function apiAddProduct(p) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
+    const v = validateProductFields_(p, null, null);
+    if (!v.ok) return v;
     const sh = ss_().getSheetByName(SHEET.PRODUCTS);
     const id = nextId_(sh, 'PROD');
-    const hasStock = p.stock !== undefined && p.stock !== null && p.stock !== '';
-    const stockVal = hasStock ? Number(p.stock) : '';
-    const thresholdVal = (p.lowStockThreshold !== undefined && p.lowStockThreshold !== null && p.lowStockThreshold !== '')
-      ? Number(p.lowStockThreshold) : 5;
-    sh.appendRow([id, p.name, p.defaultPrice || 0, true, new Date(), stockVal, thresholdVal]);
-    if (hasStock) logStockChange_(id, p.name, 'Initial Stock', stockVal, stockVal, '', 'System', 'System (new product)', '');
-    return { ok: true, productId: id };
+    const hasStock = v.stock !== '';
+    const stockVal = hasStock ? v.stock : '';
+    const thresholdVal = v.lowStockThreshold !== '' ? v.lowStockThreshold : 5;
+    sh.appendRow([id, cellSafe_(v.name), v.defaultPrice, true, new Date(), stockVal, thresholdVal]);
+    if (hasStock) logStockChange_(id, v.name, 'Initial Stock', stockVal, stockVal, '', 'System', 'System (new product)', '');
+    return { ok: true, productId: id, name: v.name, defaultPrice: v.defaultPrice };
   } finally {
     lock.releaseLock();
   }
@@ -1306,16 +1746,13 @@ function apiUpdateProduct(p) {
   const data = sh.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(p.productId)) {
-      sh.getRange(i + 1, 2).setValue(p.name);
-      sh.getRange(i + 1, 3).setValue(p.defaultPrice || 0);
-      sh.getRange(i + 1, 4).setValue(p.active !== false);
-      if (p.stock !== undefined && p.stock !== null && p.stock !== '') {
-        sh.getRange(i + 1, 6).setValue(Number(p.stock));
-      }
-      if (p.lowStockThreshold !== undefined && p.lowStockThreshold !== null && p.lowStockThreshold !== '') {
-        sh.getRange(i + 1, 7).setValue(Number(p.lowStockThreshold));
-      }
-      return { ok: true };
+      const v = validateProductFields_(p, { name: data[i][1] }, data[i][0]);
+      if (!v.ok) return v;
+      // Name, price and active flag in one write (was three separate calls).
+      sh.getRange(i + 1, 2, 1, 3).setValues([[cellSafe_(v.name), v.defaultPrice, p.active !== false]]);
+      if (v.stock !== '') sh.getRange(i + 1, 6).setValue(v.stock);
+      if (v.lowStockThreshold !== '') sh.getRange(i + 1, 7).setValue(v.lowStockThreshold);
+      return { ok: true, name: v.name, defaultPrice: v.defaultPrice };
     }
   }
   return { ok: false, error: 'Product not found' };
@@ -1357,6 +1794,7 @@ function apiSetProductStock(p) {
   const auth = authorizeStockAccess_(p, true);
   if (!auth.ok) return auth;
 
+  let result = null, dailyNeeded = false;
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -1367,16 +1805,20 @@ function apiSetProductStock(p) {
         const current = (data[i][5] === '' || data[i][5] === null || data[i][5] === undefined) ? 0 : Number(data[i][5]);
         let newStock;
         if (p.mode === 'adjust') {
-          newStock = current + Number(p.value || 0);
+          const delta0 = vInt_(p.value, 'Stock change', -VLIMIT.STOCK_MAX, VLIMIT.STOCK_MAX, true);
+          if (delta0.error) return { ok: false, error: delta0.error };
+          newStock = current + delta0.value;
         } else {
-          newStock = Number(p.value);
+          const set0 = vInt_(p.value, 'Stock', 0, VLIMIT.STOCK_MAX, true);
+          if (set0.error) return { ok: false, error: set0.error };
+          newStock = set0.value;
         }
-        if (isNaN(newStock)) return { ok: false, error: 'Invalid stock value' };
         if (newStock < 0) return { ok: false, error: 'Stock cannot be set below zero' };
-        sh.getRange(i + 1, 6).setValue(newStock);
-        if (p.lowStockThreshold !== undefined && p.lowStockThreshold !== null && p.lowStockThreshold !== '') {
-          sh.getRange(i + 1, 7).setValue(Number(p.lowStockThreshold) || 0);
-        }
+        if (newStock > VLIMIT.STOCK_MAX) return { ok: false, error: 'Stock cannot be more than ' + VLIMIT.STOCK_MAX + '.' };
+        const thr = vInt_(p.lowStockThreshold, 'Low Stock Alert', 0, VLIMIT.THRESHOLD_MAX, false, '');
+        if (thr.error) return { ok: false, error: thr.error };
+        if (thr.value !== '') sh.getRange(i + 1, 6, 1, 2).setValues([[newStock, thr.value]]);
+        else sh.getRange(i + 1, 6).setValue(newStock);
         // Only log a real, non-zero change - a Save that leaves the stock
         // number exactly where it was isn't an actual inventory event, and
         // writing one just adds noise to the Inventory Log Report.
@@ -1384,15 +1826,18 @@ function apiSetProductStock(p) {
         if (delta !== 0) {
           logStockChange_(data[i][0], data[i][1], 'Manual Adjustment', delta, newStock, '',
             auth.performerRole, auth.performerName, auth.performerId);
-          if (delta > 0) buildDailyReportSheet_(); // a real stock addition changes today's Daily Report row
+          if (delta > 0) dailyNeeded = true; // a real stock addition changes today's Daily Report row
         }
-        return { ok: true, productId: data[i][0], newStock: newStock };
+        result = { ok: true, productId: data[i][0], newStock: newStock };
+        break;
       }
     }
-    return { ok: false, error: 'Product not found' };
   } finally {
     lock.releaseLock();
   }
+  // Rebuilt outside the lock - see refreshMirrorSheets_.
+  if (dailyNeeded) refreshMirrorSheets_({ daily: true });
+  return result || { ok: false, error: 'Product not found' };
 }
 
 // Deducts (sign=-1) or restores (sign=+1) stock for a set of bill line items,
@@ -1402,28 +1847,36 @@ function apiSetProductStock(p) {
 // fresh bill save and for reconciling a bill edit (old items restored,
 // new items deducted) so the running stock count always matches reality.
 function applyStockChangeForItems_(items, billId, performerRole, performerName, performerId, sign) {
-  if (!items || !items.length) return;
+  if (!items || !items.length) return 0;
   const sh = ss_().getSheetByName(SHEET.PRODUCTS);
   const data = sh.getDataRange().getValues();
+  // name -> row index, built once (was a full scan per line item).
+  const rowByName = {};
+  for (let i = 1; i < data.length; i++) {
+    const k = vLine_(data[i][1]).toLowerCase();
+    if (k && rowByName[k] === undefined) rowByName[k] = i;
+  }
+  const logRows = [];
+  const touched = {};
   items.forEach(it => {
     const qty = Number(it.qty) || 0;
     if (!qty) return;
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][1]).trim().toLowerCase() === String(it.name).trim().toLowerCase()) {
-        const stockRaw = data[i][5];
-        const tracked = stockRaw !== '' && stockRaw !== null && stockRaw !== undefined;
-        if (!tracked) return;
-        const current = Number(stockRaw) || 0;
-        const delta = sign * qty;
-        const newStock = current + delta;
-        sh.getRange(i + 1, 6).setValue(newStock);
-        data[i][5] = newStock; // keep in sync if the same product appears twice in one bill
-        logStockChange_(data[i][0], data[i][1], sign < 0 ? 'Sale' : 'Edit Reversal', delta, newStock, billId || '',
-          performerRole, performerName, performerId);
-        return;
-      }
-    }
+    const i = rowByName[vLine_(it.name).toLowerCase()];
+    if (i === undefined) return;
+    const stockRaw = data[i][5];
+    const tracked = stockRaw !== '' && stockRaw !== null && stockRaw !== undefined;
+    if (!tracked) return;
+    const current = Number(stockRaw) || 0;
+    const delta = sign * qty;
+    const newStock = current + delta;
+    data[i][5] = newStock; // keep in sync if the same product appears twice in one bill
+    touched[i] = newStock;
+    logRows.push(stockLogRow_(data[i][0], data[i][1], sign < 0 ? 'Sale' : 'Edit Reversal', delta, newStock, billId || '',
+      performerRole, performerName, performerId));
   });
+  Object.keys(touched).forEach(i => sh.getRange(Number(i) + 1, 6).setValue(touched[i]));
+  appendStockLogRows_(logRows); // one write for every line of the bill
+  return logRows.length;
 }
 
 // Writes one StockLog row. Performer identity is stored as three CLEAN,
@@ -1434,14 +1887,22 @@ function applyStockChangeForItems_(items, billId, performerRole, performerName, 
 // actions showed their login username in the "Biller ID" column (which
 // isn't a biller ID at all). PerformerId is only ever populated for an
 // actual Biller - Super Admin and System entries correctly leave it blank.
-function logStockChange_(productId, productName, changeType, delta, newStock, billId, performerRole, performerName, performerId) {
-  const sh = ss_().getSheetByName(SHEET.STOCK_LOG);
-  if (!sh) return;
+function stockLogRow_(productId, productName, changeType, delta, newStock, billId, performerRole, performerName, performerId) {
   const role = performerRole || 'System';
   const name = performerName || 'System';
   const id = performerId || '';
   const legacyLabel = id ? (role + ': ' + name + ' (' + id + ')') : (role + ': ' + name);
-  sh.appendRow([new Date(), productId, productName, changeType, delta, newStock, billId || '', legacyLabel, role, name, id]);
+  return [new Date(), productId, cellSafe_(String(productName)), changeType, delta, newStock, billId || '',
+          cellSafe_(legacyLabel), role, cellSafe_(String(name)), id];
+}
+function appendStockLogRows_(rows) {
+  if (!rows || !rows.length) return;
+  const sh = ss_().getSheetByName(SHEET.STOCK_LOG);
+  if (!sh) return;
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+}
+function logStockChange_(productId, productName, changeType, delta, newStock, billId, performerRole, performerName, performerId) {
+  appendStockLogRows_([stockLogRow_(productId, productName, changeType, delta, newStock, billId, performerRole, performerName, performerId)]);
 }
 
 function apiGetStockLog(params) {
@@ -1508,19 +1969,36 @@ function apiSaveBiller(p) {
   const auth = requireSuperAdmin_(p.superAdminUser, p.superAdminPass);
   if (!auth.ok) return auth;
   const sh = ss_().getSheetByName(SHEET.BILLERS);
+  const data = sh.getDataRange().getValues();
+  const pass = vPassword_(p.password, 'Password', 4, !p.editBillerId);
+  if (pass.error) return { ok: false, error: pass.error, field: 'password' };
   if (p.editBillerId) {
-    const data = sh.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][0]) === String(p.editBillerId)) {
-        sh.getRange(i + 1, 2).setValue(p.name);
-        if (p.password) sh.getRange(i + 1, 3).setValue(p.password);
+        const sameName = vLine_(p.name) === vLine_(data[i][1]);
+        const name = sameName ? vRes_(vLine_(p.name)) : vPersonName_(p.name, 'Biller Name', true);
+        if (name.error) return { ok: false, error: name.error, field: 'name' };
+        sh.getRange(i + 1, 2).setValue(cellSafe_(name.value));
+        if (pass.value) sh.getRange(i + 1, 3).setValue(asText_(pass.value));
         return { ok: true, billerId: p.editBillerId };
       }
     }
     return { ok: false, error: 'Biller not found' };
   }
-  const id = 'B' + Utilities.formatString('%03d', sh.getLastRow());
-  sh.appendRow([id, p.name, p.password, true, new Date()]);
+  const name = vPersonName_(p.name, 'Biller Name', true);
+  if (name.error) return { ok: false, error: name.error, field: 'name' };
+  // FIX: the ID used to be 'B' + (number of rows). After any biller was
+  // deleted, that count went DOWN and the next new biller was handed an ID
+  // that already belonged to someone else (two "B003"s) - which then mixed
+  // up logins, permissions and the "Billed by" on bills. The next ID is now
+  // always one past the highest ID ever present, so it can never collide.
+  let max = 0;
+  for (let i = 1; i < data.length; i++) {
+    const m = String(data[i][0] || '').match(/^B(\d+)$/i);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  const id = 'B' + Utilities.formatString('%03d', max + 1);
+  sh.appendRow([id, cellSafe_(name.value), asText_(pass.value), true, new Date()]);
   return { ok: true, billerId: id };
 }
 
@@ -1665,12 +2143,19 @@ function apiSaveBill(p) {
   const billerCheck = apiVerifyBiller({ billerId: p.billerId, password: p.billerPassword });
   if (!billerCheck.ok) return billerCheck;
 
-  if (!p.customerName || !p.phone || !p.date) {
-    return { ok: false, error: 'Patient name, phone and date are mandatory' };
-  }
-  if (!p.items || !p.items.length) {
-    return { ok: false, error: 'Add at least one product' };
-  }
+  // 1a. Validate every field BEFORE taking the lock or touching the sheet.
+  // The browser applies the same rules while typing; this is the guarantee.
+  const patient = validatePatientFields_(p);
+  if (!patient.ok) return patient;
+  const date = vDate_(p.date, 'Date');
+  if (date.error) return { ok: false, error: date.error, field: 'date' };
+  const method = vOneOf_(p.paymentMethod, 'Payment Method', PAYMENT_METHODS);
+  if (method.error) return { ok: false, error: method.error, field: 'paymentMethod' };
+  const billDisc = vPercent_(p.discountPercent || 0, 'Additional Discount %');
+  if (billDisc.error) return { ok: false, error: billDisc.error, field: 'discountPercent' };
+  const checkedItems = vItems_(p.items, productNameIndex_());
+  if (checkedItems.error) return { ok: false, error: checkedItems.error, field: 'items' };
+  const f = patient.values;
 
   // 1b. Hard stop if the active spreadsheet is essentially full - this is
   // the server-side enforcement behind the "Database Full" popup on the
@@ -1685,18 +2170,35 @@ function apiSaveBill(p) {
     };
   }
 
+  // 1c. Duplicate-save guard. If the network drops AFTER the bill was saved
+  // but BEFORE the browser hears back, the biller naturally clicks Save
+  // again - which used to create a second, identical bill. Each bill form
+  // carries a one-time saveToken; a repeat of the same token just returns
+  // the bill that was already created.
+  const saveToken = /^[A-Za-z0-9\-]{8,64}$/.test(String(p.saveToken || '')) ? String(p.saveToken) : '';
+  const cache = CacheService.getScriptCache();
+
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
+  let result;
   try {
-    // 2. Resolve / create customer
-    let customerId = p.customerId;
+    if (saveToken) {
+      const prior = cache.get('save_' + saveToken);
+      if (prior) return JSON.parse(prior);
+    }
+
+    // 2. Resolve / create customer. A customerId sent by the browser is
+    // only trusted if that patient really exists - otherwise (stale tab,
+    // archived DB) we fall back to matching by phone like a new entry.
+    let customerId = String(p.customerId || '').trim();
+    if (customerId && !updateCustomerIfChanged_(customerId, f, true)) customerId = '';
     if (!customerId) {
-      const found = apiFindCustomer(p.phone, p.customerName);
+      const found = apiFindCustomer(f.phone, f.customerName);
       if (found.found) {
         customerId = found.customer.customerId;
-        updateCustomerIfChanged_(customerId, p);
+        updateCustomerIfChanged_(customerId, f);
       } else {
-        customerId = apiSaveCustomer(p, true).customerId;
+        customerId = apiSaveCustomer(f, true).customerId;
       }
     }
 
@@ -1713,10 +2215,10 @@ function apiSaveBill(p) {
     if (!billerCheck.canAccessTax) taxOverride = 'FALSE';
     if (!billerCheck.canAccessBank) bankOverride = 'FALSE';
 
-    let itemsForCalc = p.items;
-    let totalDiscountPct = Number(p.discountPercent) || 0;
+    let itemsForCalc = checkedItems.items;
+    let totalDiscountPct = billDisc.value;
     if (!billerCheck.canAccessDiscount) {
-      itemsForCalc = p.items.map(it => Object.assign({}, it, { discountPercent: 0 }));
+      itemsForCalc = itemsForCalc.map(it => Object.assign({}, it, { discountPercent: 0 }));
       totalDiscountPct = 0;
     }
     const totals = computeBillTotals_(itemsForCalc, totalDiscountPct, taxOverride, settingsMap);
@@ -1735,38 +2237,50 @@ function apiSaveBill(p) {
     const paymentStatus = 'Cash Collected';
     const qrImageUrl = '', qrId = '', paymentLink = '';
 
-    // 6. Write Bill row
+    // 6. Write Bill row (same 23 columns, same order as always)
     billsSh.appendRow([
-      billId, p.date, customerId, p.customerName, p.phone, p.email || '', p.address || '',
-      p.deliveryAddress || '', p.paymentMethod, totalQty, totalAmount, paymentStatus,
-      billerCheck.billerId, billerCheck.billerName, qrId, '', new Date(), new Date(), '', '',
+      billId, date.value, customerId, cellSafe_(f.customerName), f.phone, cellSafe_(f.email), cellSafe_(f.address),
+      cellSafe_(f.deliveryAddress), method.value, totalQty, totalAmount, paymentStatus,
+      billerCheck.billerId, cellSafe_(String(billerCheck.billerName)), qrId, '', new Date(), new Date(), '', '',
       taxOverride, bankOverride, totals.totalDiscPct
     ]);
 
     // 7. Write BillItems rows - LineTotal is the DISCOUNTED total (what's
     // actually billed for that line); DiscountPercent is kept alongside it
     // so the original price and the discount are both still visible later.
-    const itemsSh = ss_().getSheetByName(SHEET.BILL_ITEMS);
-    totals.items.forEach(it => {
-      itemsSh.appendRow([billId, it.name, it.price, it.qty, it.lineTotal * (1 - totals.totalDiscPct / 100), it.discountPercent]);
-    });
+    // All lines go in with ONE write (was one appendRow per line).
+    appendBillItemRows_(billId, totals);
 
     // 7b. Deduct live stock for any tracked products in this bill (no-op for
     // products that have never had a stock value set - see apiGetProducts).
-    applyStockChangeForItems_(p.items, billId, 'Biller', billerCheck.billerName, billerCheck.billerId, -1);
+    applyStockChangeForItems_(itemsForCalc, billId, 'Biller', billerCheck.billerName, billerCheck.billerId, -1);
 
-    buildDashboardSheet();
-    buildUniversalReportSheet_();
-    buildDailyReportSheet_();
-
-    return {
+    result = {
       ok: true, billId: billId, customerId: customerId, totalAmount: totalAmount,
       totalQty: totalQty, paymentStatus: paymentStatus, qrImageUrl: qrImageUrl,
       paymentLink: paymentLink
     };
+    if (saveToken) cache.put('save_' + saveToken, JSON.stringify(result), 1800);
   } finally {
     lock.releaseLock();
   }
+
+  // 8. Refresh the spreadsheet-only mirror tabs AFTER releasing the lock.
+  // These used to be rebuilt INSIDE the lock, so every other biller's Save
+  // sat waiting while three whole report tabs were rewritten - and once the
+  // data grew big enough, their wait passed 20 seconds and their bill failed
+  // with a lock timeout. The bill above is already safely written.
+  refreshMirrorSheets_({ dashboard: true, universal: true, daily: true });
+  return result;
+}
+
+function appendBillItemRows_(billId, totals) {
+  if (!totals.items.length) return;
+  const itemsSh = ss_().getSheetByName(SHEET.BILL_ITEMS);
+  const rows = totals.items.map(it => [
+    billId, cellSafe_(it.name), it.price, it.qty, it.lineTotal * (1 - totals.totalDiscPct / 100), it.discountPercent
+  ]);
+  itemsSh.getRange(itemsSh.getLastRow() + 1, 1, rows.length, 6).setValues(rows);
 }
 
 // ---------------------------------------------------------------------------
@@ -1809,7 +2323,10 @@ function apiGetBill(billId) {
       paymentStatus: billRow[11], billerId: billRow[12], billerName: billRow[13],
       createdAt: billRow[16], updatedAt: billRow[17],
       updatedBy: billRow[18], versionNote: billRow[19],
-      taxOverride: billRow[20] || '', bankOverride: billRow[21] || '',
+      // boolText_: Sheets stores 'TRUE' as a boolean; every reader of these
+      // two fields (Find/Edit preview, emailed PDF) compares against the
+      // TEXT 'TRUE', so a taxed bill used to come back looking untaxed.
+      taxOverride: boolText_(billRow[20]), bankOverride: boolText_(billRow[21]),
       discountPercent: Number(billRow[22]) || 0,
       items: items,
       source: foundDb.label,
@@ -1833,10 +2350,9 @@ function apiGetBill(billId) {
 //     accept it once.
 // ---------------------------------------------------------------------------
 function apiEmailBillPdf(p) {
-  const email = String(p.email || '').trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { ok: false, error: 'Please enter a valid email address' };
-  }
+  const emailCheck = vEmail_(p.email, 'Email', true);
+  if (emailCheck.error) return { ok: false, error: emailCheck.error, field: 'email' };
+  const email = emailCheck.value;
   const res = apiGetBill(p.billId);
   if (!res.ok) return res;
   const bill = res.bill;
@@ -1979,7 +2495,9 @@ function buildBrandedEmailShell_(s, bodyRowsHtml) {
   const socialDefs = [
     s.Phone ? { icon: 'PHONE-E.png', href: 'tel:+91' + String(s.Phone).replace(/[^0-9]/g, '').slice(-10), alt: 'Phone' } : null,
     s.CompanyEmail ? { icon: 'MAIL-E.png', href: 'mailto:' + s.CompanyEmail, alt: 'Mail' } : null,
-    s.SocialWhatsApp ? { icon: 'WA-E.png', href: 'https://wa.me/' + String(s.SocialWhatsApp).replace(/[^0-9]/g, ''), alt: 'WhatsApp' } : null,
+    // wa.me needs the country code - a 10-digit number alone opens a
+    // "phone number shared via url is invalid" page, so 91 is added here.
+    s.SocialWhatsApp ? { icon: 'WA-E.png', href: 'https://wa.me/' + waNumber_(s.SocialWhatsApp), alt: 'WhatsApp' } : null,
     s.SocialLinkedIn ? { icon: 'LINKEDIN-E.png', href: s.SocialLinkedIn, alt: 'LinkedIn' } : null,
     s.SocialInstagram ? { icon: 'INSTA-E.png', href: s.SocialInstagram, alt: 'Instagram' } : null,
     s.SocialFacebook ? { icon: 'FACEBOOK-E.png', href: s.SocialFacebook, alt: 'Facebook' } : null,
@@ -1990,7 +2508,7 @@ function buildBrandedEmailShell_(s, bodyRowsHtml) {
     ? '<tr><td align="center" style="padding:0 0 32px;">' +
       '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>' +
       socialDefs.map(function (d) {
-        return '<td style="padding:0 9px;"><a href="' + d.href + '" target="_blank" style="text-decoration:none;"><img src="' + ICONS_BASE + d.icon + '" width="32" height="32" alt="' + d.alt + '" style="display:block;width:32px;height:32px;border:0;"></a></td>';
+        return '<td style="padding:0 9px;"><a href="' + escHtml_(d.href) + '" target="_blank" style="text-decoration:none;"><img src="' + ICONS_BASE + d.icon + '" width="32" height="32" alt="' + d.alt + '" style="display:block;width:32px;height:32px;border:0;"></a></td>';
       }).join('') +
       '</tr></table></td></tr>'
     : '';
@@ -2306,6 +2824,11 @@ function paymentMethodLabel_(method) {
   return method || '-';
 }
 
+function waNumber_(v) {
+  const d = String(v == null ? '' : v).replace(/\D/g, '');
+  return d.length === 10 ? '91' + d : d;
+}
+
 function escHtml_(str) {
   return String(str == null ? '' : str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -2353,10 +2876,12 @@ function apiUpdateBill(p) {
   // A reason for the change is mandatory - this is what shows up in the
   // audit trail (VersionNote) and in Reports, so a bill can never be
   // silently altered.
-  if (!p.versionNote || !String(p.versionNote).trim()) {
-    return { ok: false, error: 'Please enter a reason for this change before saving.' };
+  const note = vFreeText_(p.versionNote, 'Reason For Change', VLIMIT.NOTE_MAX, true, 3);
+  if (note.error) {
+    return { ok: false, field: 'versionNote', error: !vLine_(p.versionNote) ? 'Please enter a reason for this change before saving.' : note.error };
   }
 
+  let mirrorsNeeded = false;
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -2382,93 +2907,140 @@ function apiUpdateBill(p) {
       }
       return { ok: false, error: 'Bill not found' };
     }
-
+    const original = data[rowIdx - 1];
+    const row = original.slice();
     const f = p.fields || {};
-    const map = { customerName: 4, phone: 5, email: 6, address: 7, deliveryAddress: 8,
-                  paymentMethod: 9, paymentStatus: 12 };
-    Object.keys(map).forEach(k => {
-      if (f[k] !== undefined) sh.getRange(rowIdx, map[k]).setValue(f[k]);
-    });
 
-    // Tax/bank/discount are recomputed here, server-side, from scratch -
-    // exactly like apiSaveBill - rather than trusting whatever totals the
-    // client's edit screen displayed. A biller without Tax/Bank/Discount
-    // access can never smuggle one of these into a saved edit.
-    let taxOverride = data[rowIdx - 1][20] || '';
-    let bankOverride = data[rowIdx - 1][21] || '';
-    let totalDiscountPct = Number(data[rowIdx - 1][22]) || 0;
+    // ---- 1. Validate EVERYTHING before writing ANYTHING. --------------------
+    // Only fields that actually changed are checked against the rules, so a
+    // value saved before these rules existed never blocks fixing something
+    // else on the same bill. (Before this, an edit could delete the bill's
+    // item rows and THEN fail half-way through.)
+    const changed = function (k, col) {
+      return f[k] !== undefined && vLine_(f[k]) !== vLine_(row[col]);
+    };
+    const fieldRules = [
+      ['customerName', 3, function (v) { return vPersonName_(v, 'Patient Name', true); }],
+      ['phone', 4, function (v) { return vMobile_(v, 'Phone Number', true); }],
+      ['email', 5, function (v) { return vEmail_(v, 'Email', false); }],
+      ['address', 6, function (v) { return vAddress_(v, 'Address'); }],
+      ['deliveryAddress', 7, function (v) { return vAddress_(v, 'Delivery Address'); }],
+      ['paymentMethod', 8, function (v) { return vOneOf_(v, 'Payment Method', PAYMENT_METHODS); }],
+      ['paymentStatus', 11, function (v) { return vOneOf_(v, 'Payment Status', PAYMENT_STATUSES); }]
+    ];
+    for (let k = 0; k < fieldRules.length; k++) {
+      const key = fieldRules[k][0], col = fieldRules[k][1];
+      if (!changed(key, col)) continue;
+      // A phone that only differs in formatting ("+91 98765 43210" vs
+      // "9876543210") is the same number - don't treat it as a change.
+      if (key === 'phone' && normalizeMobile_(f.phone) === normalizeMobile_(row[col])) continue;
+      const r = fieldRules[k][2](f[key]);
+      if (r.error) return { ok: false, error: r.error, field: key };
+      row[col] = r.value;
+    }
+
+    let totalDiscountPct = Number(row[22]) || 0;
+    if (f.discountPercent !== undefined) {
+      const d = vPercent_(f.discountPercent, 'Additional Discount %');
+      if (d.error) return { ok: false, error: d.error, field: 'discountPercent' };
+      totalDiscountPct = d.value;
+    }
+
+    // Line items: every name that's already on this bill, or in the
+    // Products list, is accepted as-is.
+    const itemsSh = ss_().getSheetByName(SHEET.BILL_ITEMS);
+    const itemsData = itemsSh.getDataRange().getValues();
+    const oldItems = [];
+    const oldRows = [];
+    const known = productNameIndex_();
+    for (let i = 1; i < itemsData.length; i++) {
+      if (String(itemsData[i][0]) === String(p.billId)) {
+        oldItems.push({ name: itemsData[i][1], price: itemsData[i][2], qty: itemsData[i][3], discountPercent: Number(itemsData[i][5]) || 0 });
+        oldRows.push(i + 1);
+        known[vLine_(itemsData[i][1]).toLowerCase()] = true;
+      }
+    }
+    let newItems = null;
+    if (f.items) {
+      const checked = vItems_(f.items, known);
+      if (checked.error) return { ok: false, error: checked.error, field: 'items' };
+      newItems = checked.items;
+    }
+
+    // ---- 2. Tax/bank/discount are recomputed here, server-side, from
+    // scratch - exactly like apiSaveBill - rather than trusting whatever
+    // totals the client's edit screen displayed. A biller without
+    // Tax/Bank/Discount access can never smuggle one of these into a saved
+    // edit. (Sheets stores the text "TRUE" as a real boolean, so the stored
+    // value is normalised back to 'TRUE'/'FALSE' before comparing.)
+    let taxOverride = boolText_(row[20]);
+    let bankOverride = boolText_(row[21]);
     if (f.taxOverride === 'TRUE' || f.taxOverride === 'FALSE') taxOverride = f.taxOverride;
     if (f.bankOverride === 'TRUE' || f.bankOverride === 'FALSE') bankOverride = f.bankOverride;
-    if (f.discountPercent !== undefined) totalDiscountPct = Number(f.discountPercent) || 0;
     if (!auth.canAccessTax) taxOverride = 'FALSE';
     if (!auth.canAccessBank) bankOverride = 'FALSE';
     if (!auth.canAccessDiscount) totalDiscountPct = 0;
-
-    let oldItems = [];
-    let newItemsForCalc = null;
-    if (f.items) {
-      const itemsSh = ss_().getSheetByName(SHEET.BILL_ITEMS);
-      const itemsData = itemsSh.getDataRange().getValues();
-      for (let i = itemsData.length - 1; i >= 1; i--) {
-        if (String(itemsData[i][0]) === String(p.billId)) {
-          oldItems.push({ name: itemsData[i][1], qty: itemsData[i][3] });
-          itemsSh.deleteRow(i + 1);
-        }
-      }
-      newItemsForCalc = auth.canAccessDiscount
-        ? f.items
-        : f.items.map(it => Object.assign({}, it, { discountPercent: 0 }));
-    }
+    if (newItems && !auth.canAccessDiscount) newItems = newItems.map(it => Object.assign({}, it, { discountPercent: 0 }));
 
     // Recompute totals - using either the new items (if this edit touched
     // them) or the bill's existing items, so tax/discount toggle changes
     // alone (no item edits) still land on a correct grand total.
     const settingsMap = getSettingsMap_();
-    let itemsForTotals = newItemsForCalc;
-    if (!itemsForTotals) {
-      const itemsSh2 = ss_().getSheetByName(SHEET.BILL_ITEMS);
-      const itemsData2 = itemsSh2.getDataRange().getValues();
-      itemsForTotals = [];
-      for (let i = 1; i < itemsData2.length; i++) {
-        if (String(itemsData2[i][0]) === String(p.billId)) {
-          itemsForTotals.push({ name: itemsData2[i][1], price: itemsData2[i][2], qty: itemsData2[i][3], discountPercent: Number(itemsData2[i][5]) || 0 });
-        }
-      }
-    }
+    const itemsForTotals = newItems || oldItems;
     const totals = computeBillTotals_(itemsForTotals, totalDiscountPct, taxOverride, settingsMap);
     const totalQty = itemsForTotals.reduce((s, it) => s + (Number(it.qty) || 0), 0);
 
-    sh.getRange(rowIdx, 10).setValue(totalQty);
-    sh.getRange(rowIdx, 11).setValue(totals.netAmount);
-    sh.getRange(rowIdx, 21).setValue(taxOverride);
-    sh.getRange(rowIdx, 22).setValue(bankOverride);
-    sh.getRange(rowIdx, 23).setValue(totals.totalDiscPct);
-    sh.getRange(rowIdx, 18).setValue(new Date());
-    sh.getRange(rowIdx, 19).setValue(auth.updatedByLabel);
-    sh.getRange(rowIdx, 20).setValue('Updated by ' + auth.updatedByLabel + ' on ' + new Date().toLocaleString() +
-      ' - ' + String(p.versionNote).trim());
+    // ---- 3. Write. The whole bill row goes back in ONE call (was ~15
+    // separate cell writes). Every column keeps its exact position.
+    const now = new Date();
+    row[9] = totalQty;
+    row[10] = totals.netAmount;
+    row[17] = now;
+    row[18] = auth.updatedByLabel;
+    row[19] = 'Updated by ' + auth.updatedByLabel + ' on ' +
+      Utilities.formatDate(now, 'Asia/Kolkata', 'd/M/yyyy, h:mm:ss a') + ' IST - ' + note.value;
+    row[20] = taxOverride;
+    row[21] = bankOverride;
+    row[22] = totals.totalDiscPct;
+    // Cells this edit didn't touch are written back exactly as stored;
+    // changed ones are written like any new entry (formula-safe).
+    sh.getRange(rowIdx, 1, 1, row.length).setValues([row.map((v, k) => v === original[k] ? keepType_(v) : cellSafe_(v))]);
 
-    if (newItemsForCalc) {
-      const itemsSh = ss_().getSheetByName(SHEET.BILL_ITEMS);
-      totals.items.forEach(it => {
-        itemsSh.appendRow([p.billId, it.name, it.price, it.qty, it.lineTotal * (1 - totals.totalDiscPct / 100), it.discountPercent]);
-      });
+    if (newItems) {
+      // Delete this bill's old item rows - contiguous runs in one call each,
+      // bottom-up so earlier row numbers stay valid.
+      for (let j = oldRows.length - 1; j >= 0;) {
+        let start = oldRows[j], count = 1;
+        while (j - count >= 0 && oldRows[j - count] === start - 1) { start--; count++; }
+        itemsSh.deleteRows(start, count);
+        j -= count;
+      }
+      appendBillItemRows_(p.billId, totals);
 
       // Reconcile live stock: give back what the old line items held, then
       // deduct the new line items - so an edited bill never double-counts
       // or silently leaks stock, regardless of what changed.
       applyStockChangeForItems_(oldItems, p.billId, auth.performerRole, auth.performerName, auth.performerId, +1);
-      applyStockChangeForItems_(f.items, p.billId, auth.performerRole, auth.performerName, auth.performerId, -1);
+      applyStockChangeForItems_(newItems, p.billId, auth.performerRole, auth.performerName, auth.performerId, -1);
     }
-
-    buildDashboardSheet();
-    buildUniversalReportSheet_();
-    buildDailyReportSheet_();
-
-    return { ok: true };
+    mirrorsNeeded = true;
   } finally {
     lock.releaseLock();
   }
+
+  // Rebuilt after the lock is released - see the note in apiSaveBill.
+  if (mirrorsNeeded) refreshMirrorSheets_({ dashboard: true, universal: true, daily: true });
+  return { ok: true };
+}
+
+// Sheets turns the text "TRUE"/"FALSE" into real booleans when written.
+// Everything in this app compares against the TEXT 'TRUE'/'FALSE', so values
+// read back are normalised here. Blank stays blank ("not set").
+function boolText_(v) {
+  if (v === true) return 'TRUE';
+  if (v === false) return 'FALSE';
+  const t = String(v == null ? '' : v).trim().toUpperCase();
+  return (t === 'TRUE' || t === 'FALSE') ? t : '';
 }
 
 // ---------------------------------------------------------------------------
@@ -2674,19 +3246,47 @@ function apiGetCustomCharts() {
   return { ok: true, charts: charts };
 }
 
+const CHART_DIMENSIONS_ = {
+  bills: ['BillerName', 'PaymentMethod', 'PaymentStatus', 'CustomerName', 'Date', 'Month', 'Year'],
+  billitems: ['ProductName'], customers: [], products: []
+};
+const CHART_METRIC_FIELDS_ = {
+  bills: ['TotalAmount', 'TotalQty'], billitems: ['LineTotal', 'Qty'], customers: [], products: []
+};
+
+// Validates AND cleans the definition in place (name trimmed, topN a whole
+// number, unknown dimension/field names rejected rather than silently
+// producing an empty "Unknown" chart).
 function validateChartDef_(p) {
   const validTypes = ['bar', 'pie', 'donut', 'number'];
   const validSources = ['bills', 'billitems', 'customers', 'products'];
   const validMetrics = ['sum', 'count', 'average'];
-  if (!p.name || !String(p.name).trim()) return 'Chart name is required.';
+  const name = vFreeText_(p.name, 'Chart name', 60, true, 2);
+  if (name.error) return name.error;
+  p.name = name.value;
   if (validTypes.indexOf(p.type) === -1) return 'Invalid chart type.';
   if (validSources.indexOf(p.dataSource) === -1) return 'Invalid data source.';
   if (validMetrics.indexOf(p.metric) === -1) return 'Invalid metric.';
   if (p.type !== 'number' && (p.dataSource === 'customers' || p.dataSource === 'products')) {
     return 'Patients/Products can only be used with a Number chart (there\'s nothing to group them by).';
   }
-  if (p.type !== 'number' && !p.dimension) return 'Choose a field to group by for this chart type.';
-  if ((p.metric === 'sum' || p.metric === 'average') && !p.metricField) return 'Choose which number field to use.';
+  if (p.type !== 'number') {
+    if (!p.dimension) return 'Choose a field to group by for this chart type.';
+    if (CHART_DIMENSIONS_[p.dataSource].indexOf(p.dimension) === -1) return 'That Group By field does not belong to this data source.';
+  } else {
+    p.dimension = '';
+  }
+  if (p.metric === 'sum' || p.metric === 'average') {
+    if (!p.metricField) return 'Choose which number field to use.';
+    if (CHART_METRIC_FIELDS_[p.dataSource].indexOf(p.metricField) === -1) return 'That number field does not belong to this data source.';
+  } else {
+    p.metricField = '';
+  }
+  const topN = vInt_(p.topN === '' || p.topN == null ? 0 : p.topN, 'Show Top', 0, 100, false);
+  if (topN.error) return topN.error;
+  p.topN = topN.value;
+  p.sortDir = p.sortDir === 'asc' ? 'asc' : 'desc';
+  p.color = VR.HEX_COLOR.test(String(p.color || '')) ? p.color : '';
   return null;
 }
 
@@ -2705,7 +3305,7 @@ function apiSaveCustomChart(p) {
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][0]) === String(p.chartId)) {
         sh.getRange(i + 1, 2, 1, 8).setValues([[
-          p.name, p.type, p.dataSource, p.dimension || '', p.metric,
+          cellSafe_(p.name), p.type, p.dataSource, p.dimension || '', p.metric,
           p.metricField || '', Number(p.topN) || 0, p.sortDir || 'desc'
         ]]);
         sh.getRange(i + 1, 12).setValue(p.color || '');
@@ -2718,7 +3318,7 @@ function apiSaveCustomChart(p) {
   const maxOrder = data.reduce((m, row, i) => i === 0 ? m : Math.max(m, Number(row[9]) || 0), 0);
   const chartId = 'CHART-' + Utilities.getUuid().slice(0, 8).toUpperCase();
   sh.appendRow([
-    chartId, p.name, p.type, p.dataSource, p.dimension || '', p.metric,
+    chartId, cellSafe_(p.name), p.type, p.dataSource, p.dimension || '', p.metric,
     p.metricField || '', Number(p.topN) || 0, p.sortDir || 'desc', maxOrder + 1, new Date(), p.color || ''
   ]);
   return { ok: true, chartId: chartId };
@@ -2858,9 +3458,17 @@ function apiGetCustomChartData(p) {
 //     browser from data these same ungated GET endpoints already returned,
 //     so there is no separate "download" API action to protect here.
 // ---------------------------------------------------------------------------
+// The spreadsheet's time zone is looked up ONCE per spreadsheet per request.
+// It used to be fetched from Google on every single call - three times per
+// row of every report - which made reports and every bill save crawl as the
+// data grew.
+const TZ_CACHE_ = new Map();
 function fmtDate_(d, pattern, ssRef) {
   if (!(d instanceof Date) || isNaN(d.getTime())) return '';
-  return Utilities.formatDate(d, (ssRef || ss_()).getSpreadsheetTimeZone(), pattern);
+  const ref = ssRef || ss_();
+  let tz = TZ_CACHE_.get(ref);
+  if (!tz) { tz = ref.getSpreadsheetTimeZone(); TZ_CACHE_.set(ref, tz); }
+  return Utilities.formatDate(d, tz, pattern);
 }
 
 // A report row cap protects both the Apps Script 6-minute execution limit
@@ -3024,21 +3632,22 @@ function apiGetUniversalReport() {
 // THIS spreadsheet's own data (not merged across archives) - it's a mirror
 // of what's physically in this spreadsheet, whereas the website's Reports
 // menu is what merges active + archives together for you.
-function buildUniversalReportSheet_() {
+// `pre` (optional) = { bills, items, stock } already read by
+// refreshMirrorSheets_, so the three mirror tabs share ONE read of the data.
+function buildUniversalReportSheet_(pre) {
+  pre = (pre && pre.bills) ? pre : readMirrorSource_();
   const ssRef = ss_();
   let sh = ssRef.getSheetByName(SHEET.UNIVERSAL_REPORT);
   if (!sh) sh = ssRef.insertSheet(SHEET.UNIVERSAL_REPORT);
   sh.clear();
 
-  const billsSh = ssRef.getSheetByName(SHEET.BILLS);
-  const itemsSh = ssRef.getSheetByName(SHEET.BILL_ITEMS);
-  const billsData = billsSh ? billsSh.getDataRange().getValues() : [];
+  const billsData = pre.bills;
   const billMap = {};
   for (let i = 1; i < billsData.length; i++) {
     const r = billsData[i];
     if (r[0]) billMap[String(r[0])] = r;
   }
-  const itemsData = itemsSh ? itemsSh.getDataRange().getValues() : [];
+  const itemsData = pre.items;
 
   const dataRows = [];
   const seenBillIds = new Set();
@@ -3132,10 +3741,17 @@ function buildUniversalReportSheet_() {
   if (billTotalAmountCol > 0) sh.getRange(HEADER_ROW, billTotalAmountCol).setNote(noteText);
 
   if (dataRows.length) {
-    sh.getRange(HEADER_ROW + 1, 1, dataRows.length, numCols).setValues(dataRows);
+    // cellSafe_: text read back from Bills (e.g. an address starting with
+    // "-") would otherwise turn into a formula / #ERROR! in this tab.
+    sh.getRange(HEADER_ROW + 1, 1, dataRows.length, numCols).setValues(dataRows.map(row => row.map(cellSafe_)));
   }
   sh.setFrozenRows(HEADER_ROW);
-  try { sh.autoResizeColumns(1, numCols); } catch (e) { /* cosmetic only */ }
+  // Auto-fit measures every cell in every column - fine while the sheet is
+  // small, but on thousands of rows it was a big chunk of every bill save.
+  // Column widths are settled long before then, so it stops after that.
+  if (dataRows.length <= MIRROR_AUTOFIT_MAX_ROWS) {
+    try { sh.autoResizeColumns(1, numCols); } catch (e) { /* cosmetic only */ }
+  }
 }
 
 // ---- Daily Report: one row per (Date, Product) - ONLY when something
@@ -3242,7 +3858,8 @@ const DAILY_REPORT_HEADERS = [
 // as a real sheet in the active spreadsheet - same mirroring principle as
 // buildUniversalReportSheet_(): reflects only THIS spreadsheet's own data,
 // while the website's Reports menu merges active + archives together.
-function buildDailyReportSheet_() {
+function buildDailyReportSheet_(pre) {
+  pre = (pre && pre.bills) ? pre : readMirrorSource_();
   const ssRef = ss_();
   let sh = ssRef.getSheetByName(SHEET.DAILY_REPORT);
   if (!sh) sh = ssRef.insertSheet(SHEET.DAILY_REPORT);
@@ -3255,9 +3872,8 @@ function buildDailyReportSheet_() {
     return map[key];
   };
 
-  const stockSh = ssRef.getSheetByName(SHEET.STOCK_LOG);
-  if (stockSh) {
-    const stockData = stockSh.getDataRange().getValues();
+  {
+    const stockData = pre.stock;
     for (let i = 1; i < stockData.length; i++) {
       const r = stockData[i];
       if (!r[0]) continue;
@@ -3267,16 +3883,14 @@ function buildDailyReportSheet_() {
     }
   }
 
-  const billsSh = ssRef.getSheetByName(SHEET.BILLS);
-  const itemsSh = ssRef.getSheetByName(SHEET.BILL_ITEMS);
-  if (billsSh && itemsSh) {
-    const billsData = billsSh.getDataRange().getValues();
+  if (pre.bills.length && pre.items.length) {
+    const billsData = pre.bills;
     const billMap = {};
     for (let i = 1; i < billsData.length; i++) {
       const r = billsData[i];
       if (r[0]) billMap[String(r[0])] = r;
     }
-    const itemsData = itemsSh.getDataRange().getValues();
+    const itemsData = pre.items;
     for (let i = 1; i < itemsData.length; i++) {
       const item = itemsData[i];
       if (!item[0]) continue;
@@ -3313,11 +3927,13 @@ function buildDailyReportSheet_() {
   const out = [DAILY_REPORT_HEADERS].concat(rows.map(r =>
     [r.date, r.product, r.addedToStock, r.qtySold, r.grossRevenue, r.itemDiscount, r.billDiscount, r.revenue]
   ));
-  sh.getRange(1, 1, out.length, DAILY_REPORT_HEADERS.length).setValues(out);
+  sh.getRange(1, 1, out.length, DAILY_REPORT_HEADERS.length).setValues(out.map(row => row.map(cellSafe_)));
   sh.getRange(1, 1, 1, DAILY_REPORT_HEADERS.length)
     .setFontWeight('bold').setBackground('#AE2314').setFontColor('#FFFFFF');
   sh.setFrozenRows(1);
-  try { sh.autoResizeColumns(1, DAILY_REPORT_HEADERS.length); } catch (e) { /* cosmetic only */ }
+  if (rows.length <= MIRROR_AUTOFIT_MAX_ROWS) {
+    try { sh.autoResizeColumns(1, DAILY_REPORT_HEADERS.length); } catch (e) { /* cosmetic only */ }
+  }
 }
 
 // ---- Inventory Log Report: raw audit trail from StockLog -----------------
@@ -3409,7 +4025,9 @@ function provisionSchemaOnSpreadsheet_(ssRef) {
 // Run/play button) any time you want the sheet's theme forced back to the
 // defaults defined above - no website login needed.
 function forceResetThemeNow() {
-  THEME_SETTING_DEFAULTS.forEach(pair => setSetting_(pair[0], pair[1]));
+  const map = {};
+  THEME_SETTING_DEFAULTS.forEach(pair => { map[pair[0]] = pair[1]; });
+  setSettings_(map);
 }
 
 function setupDatabase() {
@@ -3489,10 +4107,67 @@ function createSheetIfMissing_(ssRef, name, headers) {
 function apiRefreshDashboardSheet(p) {
   const auth = requireSuperAdmin_(p.superAdminUser, p.superAdminPass);
   if (!auth.ok) return auth;
-  buildDashboardSheet();
-  buildUniversalReportSheet_();
-  buildDailyReportSheet_();
+  refreshMirrorSheets_({ dashboard: true, universal: true, daily: true });
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// MIRROR TABS (Dashboard / UniversalReport / DailyReport) - spreadsheet-only
+// copies of what the website already computes live, for anyone opening the
+// Google Sheet directly. Rebuilt after every bill save/edit, but:
+//   - AFTER the billing lock is released, so a rebuild never makes another
+//     biller's Save wait (or time out);
+//   - from ONE shared read of Bills/BillItems/StockLog (each builder used to
+//     read everything again on its own);
+//   - coalesced: if two billers save at the same moment, the second request
+//     waits for the first rebuild and only rebuilds again if something is
+//     still outstanding - the tabs always end up reflecting every saved bill.
+// ---------------------------------------------------------------------------
+const MIRROR_AUTOFIT_MAX_ROWS = 300;
+const MIRROR_PARTS_ = ['dashboard', 'universal', 'daily'];
+
+function readMirrorSource_() {
+  const ssRef = ss_();
+  const read = function (name) {
+    const sh = ssRef.getSheetByName(name);
+    return sh ? sh.getDataRange().getValues() : [];
+  };
+  return { bills: read(SHEET.BILLS), items: read(SHEET.BILL_ITEMS), stock: read(SHEET.STOCK_LOG) };
+}
+
+function refreshMirrorSheets_(parts) {
+  // Never let a mirror-tab problem turn a successfully SAVED bill into an
+  // error on screen (the biller would then save it a second time).
+  try { refreshMirrorSheetsInner_(parts || {}); }
+  catch (e) { Logger.log('Mirror tab refresh skipped: ' + e); }
+}
+
+function refreshMirrorSheetsInner_(parts) {
+  const cache = CacheService.getScriptCache();
+  const dirtyKey = function (part) { return 'mirror_dirty_' + ss_().getId() + '_' + part; };
+  MIRROR_PARTS_.forEach(function (part) { if (parts[part]) cache.put(dirtyKey(part), '1', 21600); });
+
+  // A separate lock from the billing (script) lock - rebuilds only ever
+  // queue behind other rebuilds, never behind or in front of a bill save.
+  let lock = null;
+  try { lock = LockService.getUserLock(); } catch (e) { lock = null; } // no lock available -> just rebuild
+  if (lock && !lock.tryLock(30000)) return; // flags stay set; the next save picks them up
+  try {
+    const todo = {};
+    let any = false;
+    MIRROR_PARTS_.forEach(function (part) {
+      if (cache.get(dirtyKey(part))) { todo[part] = true; any = true; cache.remove(dirtyKey(part)); }
+    });
+    if (!any) return; // another request already rebuilt everything we needed
+    const pre = readMirrorSource_();
+    // Each tab is independent - one failing never stops the others, and
+    // never fails the bill save that triggered it (it's already written).
+    if (todo.dashboard) { try { buildDashboardSheet(pre); } catch (e) { cache.put(dirtyKey('dashboard'), '1', 21600); Logger.log('Dashboard tab rebuild failed: ' + e); } }
+    if (todo.universal) { try { buildUniversalReportSheet_(pre); } catch (e) { cache.put(dirtyKey('universal'), '1', 21600); Logger.log('UniversalReport tab rebuild failed: ' + e); } }
+    if (todo.daily) { try { buildDailyReportSheet_(pre); } catch (e) { cache.put(dirtyKey('daily'), '1', 21600); Logger.log('DailyReport tab rebuild failed: ' + e); } }
+  } finally {
+    if (lock) lock.releaseLock();
+  }
 }
 
 
@@ -3503,15 +4178,16 @@ function apiRefreshDashboardSheet(p) {
 // ---------------------------------------------------------------------------
 // 15. OPTIONAL - populate a live "Dashboard" sheet snapshot with formulas
 // ---------------------------------------------------------------------------
-function buildDashboardSheet() {
+function buildDashboardSheet(pre) {
+  pre = (pre && pre.bills) ? pre : readMirrorSource_();
   const ssRef = ss_();
   let sh = ssRef.getSheetByName(SHEET.DASHBOARD);
   if (!sh) sh = ssRef.insertSheet(SHEET.DASHBOARD);
   sh.clear();
   sh.getCharts().forEach(c => sh.removeChart(c));
 
-  const bills = ssRef.getSheetByName(SHEET.BILLS).getDataRange().getValues();
-  const items = ssRef.getSheetByName(SHEET.BILL_ITEMS).getDataRange().getValues();
+  const bills = pre.bills;
+  const items = pre.items;
 
   let totalSalesCount = 0, totalSalesAmount = 0, totalQtySold = 0;
   let cashAmount = 0, bankAmount = 0;
@@ -3561,7 +4237,7 @@ function buildDashboardSheet() {
   sh.getRange(prodStartRow, 1, 1, 3).setValues([['Service/Treatment', 'Qty Sold', 'Amount (₹)']])
     .setFontWeight('bold').setBackground('#E1341E').setFontColor('#FFFFFF');
   if (productRows.length) {
-    sh.getRange(prodStartRow + 1, 1, productRows.length, 3).setValues(productRows);
+    sh.getRange(prodStartRow + 1, 1, productRows.length, 3).setValues(productRows.map(row => row.map(cellSafe_)));
   }
 
   // Cash vs Bank table

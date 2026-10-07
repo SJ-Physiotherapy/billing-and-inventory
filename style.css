@@ -213,6 +213,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .field-error { font-size: 11.5px; color: var(--danger); margin-top: 4px; display: none; }
 .field.has-error input { border-color: var(--danger); }
 .field.has-error .field-error { display: block; }
+/* Input rules (see "3b. INPUT RULES" in app.js): the exact field that
+   failed gets a red outline - including bill-line cells, inventory cells
+   and table inputs that don't sit inside a .field wrapper. */
+.field.has-error textarea, .field.has-error select { border-color: var(--danger); }
+input.input-invalid, textarea.input-invalid, select.input-invalid {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 3px var(--danger-soft) !important;
+}
+.field-error { line-height: 1.45; }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
