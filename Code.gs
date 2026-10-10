@@ -37,7 +37,7 @@ const SHEET = {
 // to prove whether a NEW DEPLOYMENT actually picked up your latest code
 // (saving the file alone does NOT update the live /exec URL - see
 // Deploy > Manage deployments > pencil icon > Version: New version > Deploy).
-const BACKEND_BUILD = 'SJP-2026-10-07-01-VALIDATION';
+const BACKEND_BUILD = 'SJP-2026-10-10-01-FAMILY';
 
 // ---------------------------------------------------------------------------
 // 0b. SCHEMA MIGRATIONS - runs automatically on every request (cheap
@@ -1556,25 +1556,33 @@ function apiGetCustomersList() {
 // ---------------------------------------------------------------------------
 // 5. CUSTOMERS
 // ---------------------------------------------------------------------------
+// A patient is identified by PHONE + NAME TOGETHER, never by phone alone.
+// Children (and other family members) usually share a parent's number, so
+// the same number with a different name is a different patient and gets
+// its own Patient ID.
+//   - Phone compared as a normalised 10-digit number ("+91 98765 43210"
+//     equals "9876543210", or the NUMBER 9876543210 as Sheets stores it).
+//   - Name compared ignoring capitals and extra spaces ("ramesh  kumar"
+//     equals "Ramesh Kumar").
+// When no exact match exists, the other patients already on that number are
+// returned as `samePhone`, so the biller can pick one if the name was just
+// typed slightly differently - instead of creating a duplicate by accident.
+function patientNameKey_(v) { return vLine_(v).toLowerCase(); }
+
 function apiFindCustomer(phone, name) {
-  // Phones are compared as normalised 10-digit numbers, so a patient saved
-  // long ago as "+91 98765 43210" (or stored by Sheets as the NUMBER
-  // 9876543210) still matches "9876543210" typed today - instead of quietly
-  // creating a duplicate Patient ID for the same person.
   const wantPhone = normalizeMobile_(phone);
-  const wantName = vLine_(name).toLowerCase();
+  const wantName = patientNameKey_(name);
+  if (!wantPhone || !wantName) return { ok: true, found: false, samePhone: [] };
   const sh = ss_().getSheetByName(SHEET.CUSTOMERS);
   const data = sh.getDataRange().getValues();
+  const samePhone = [];
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    if (!row[0]) continue;
-    if (wantPhone) {
-      if (normalizeMobile_(row[2]) === wantPhone) return { ok: true, found: true, customer: rowToCustomer_(row) };
-    } else if (wantName && vLine_(row[1]).toLowerCase() === wantName) {
-      return { ok: true, found: true, customer: rowToCustomer_(row) };
-    }
+    if (!row[0] || normalizeMobile_(row[2]) !== wantPhone) continue;
+    if (patientNameKey_(row[1]) === wantName) return { ok: true, found: true, customer: rowToCustomer_(row) };
+    if (samePhone.length < 20) samePhone.push({ customerId: row[0], name: vLine_(row[1]) });
   }
-  return { ok: true, found: false };
+  return { ok: true, found: false, samePhone: samePhone };
 }
 
 function rowToCustomer_(row) {
@@ -1622,27 +1630,32 @@ function apiSaveCustomer(p, skipLock) {
 }
 
 // Returns true if the patient exists (and was refreshed), false otherwise.
-// With requirePhoneMatch, a patient whose stored phone differs from p.phone
-// is NOT touched and false is returned - so a Patient ID left over in the
-// form after the phone number was changed can never attach a bill to (or
-// overwrite the details of) the wrong patient.
-function updateCustomerIfChanged_(customerId, p, requirePhoneMatch) {
+// With requireIdentityMatch, a patient whose stored phone OR name differs
+// from what's on the bill is NOT touched and false is returned - so a
+// Patient ID left in the form after the phone or name was changed can never
+// attach a bill to (or overwrite the details of) a different family member.
+function updateCustomerIfChanged_(customerId, p, requireIdentityMatch) {
   const sh = ss_().getSheetByName(SHEET.CUSTOMERS);
   const data = sh.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(customerId)) {
-      if (requirePhoneMatch) {
-        const stored = normalizeMobile_(data[i][2]);
-        if (stored && stored !== normalizeMobile_(p.phone)) return false;
+      if (requireIdentityMatch) {
+        if (normalizeMobile_(data[i][2]) !== normalizeMobile_(p.phone)) return false;
+        if (patientNameKey_(data[i][1]) !== patientNameKey_(p.customerName)) return false;
       }
       // Only overwrite a field when a new value was actually provided -
       // this also opportunistically repairs a blank Name left over from
       // the bug above, without ever erasing a name that's already there.
-      // Phone (column C) is the patient's identity and is never changed here.
+      // Phone (column C) is part of the patient's identity and is never
+      // changed here; the name only ever differs in capitals/spacing, since
+      // a different name is a different patient (see apiFindCustomer).
       // Kept values are written back with their original type (keepType_),
       // new ones are formula-safe - a legacy "+91 98765 43210" stays text.
       const next = [
-        p.customerName ? cellSafe_(p.customerName) : keepType_(data[i][1]),
+        // The saved name is kept as it was (a repeat visit typed as
+        // "kavya KUMAR" must not overwrite "Kavya Kumar"); it's only filled
+        // in when the stored name is blank.
+        vLine_(data[i][1]) ? keepType_(data[i][1]) : cellSafe_(p.customerName || ''),
         keepType_(data[i][2]),
         p.email ? cellSafe_(p.email) : keepType_(data[i][3]),
         p.address ? cellSafe_(p.address) : keepType_(data[i][4]),
@@ -2187,9 +2200,12 @@ function apiSaveBill(p) {
       if (prior) return JSON.parse(prior);
     }
 
-    // 2. Resolve / create customer. A customerId sent by the browser is
-    // only trusted if that patient really exists - otherwise (stale tab,
-    // archived DB) we fall back to matching by phone like a new entry.
+    // 2. Resolve / create customer by PHONE + NAME together. A customerId
+    // sent by the browser is only trusted if that patient really exists
+    // with this same phone AND name - otherwise (stale tab, archived DB,
+    // name or phone edited after the match) we match afresh: same number +
+    // same name = existing patient; same number + different name = a new
+    // patient (e.g. a child billed on a parent's number).
     let customerId = String(p.customerId || '').trim();
     if (customerId && !updateCustomerIfChanged_(customerId, f, true)) customerId = '';
     if (!customerId) {

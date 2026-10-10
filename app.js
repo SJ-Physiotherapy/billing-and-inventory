@@ -14,8 +14,8 @@ const CONFIG = {
 // Bump this whenever you redeploy app.js - printed on load so you can
 // confirm in the browser console (F12) that the page is actually running
 // the file you think it's running, not a cached older copy.
-const FRONTEND_BUILD = 'SJP-2026-10-07-34-VALIDATION';
-const EXPECTED_BACKEND_BUILD = 'SJP-2026-10-07-01-VALIDATION'; // must match BACKEND_BUILD in Code.gs
+const FRONTEND_BUILD = 'SJP-2026-10-10-35-FAMILY';
+const EXPECTED_BACKEND_BUILD = 'SJP-2026-10-10-01-FAMILY'; // must match BACKEND_BUILD in Code.gs
 console.log('SJP billing app.js build', FRONTEND_BUILD);
 
 // Shows a impossible-to-miss banner at the top of the app the moment we can
@@ -1663,48 +1663,74 @@ document.getElementById('f_totalDiscountPct') && document.getElementById('f_tota
 // -------------------------------------------------------------------------
 // 8. PATIENT AUTO-MATCH
 // -------------------------------------------------------------------------
+// A patient = PHONE + NAME together. The same number with a different name
+// (e.g. a child on a parent's number) is a different patient and gets its
+// own Patient ID. Matching runs once BOTH a valid number and a name are in.
 let custLookupTimer = null;
 let lastCustLookupKey_ = '';
-let matchedPhone_ = '';
+let matchedKey_ = '';
 ['f_phone', 'f_customerName'].forEach(id => {
-  document.getElementById(id).addEventListener('blur', () => {
+  const el = document.getElementById(id);
+  el.addEventListener('blur', () => {
     clearTimeout(custLookupTimer);
     custLookupTimer = setTimeout(tryMatchCustomer, 250);
   });
-});
-
-// The moment the phone number stops being the one that was matched, the
-// auto-filled Patient ID no longer belongs to this person - clear it, so a
-// bill can never be saved against the previous patient's ID.
-document.getElementById('f_phone').addEventListener('input', () => {
-  const idEl = document.getElementById('f_customerId');
-  if (idEl.value && normalizeMobile_(document.getElementById('f_phone').value) !== matchedPhone_) {
-    idEl.value = '';
-    matchedPhone_ = '';
+  // The moment the phone OR the name stops being the one that was matched,
+  // the auto-filled Patient ID no longer belongs to this person - clear it,
+  // so a bill can never be saved against another family member's ID.
+  el.addEventListener('input', () => {
+    const idEl = document.getElementById('f_customerId');
+    if (currentCustLookupKey_() === matchedKey_ && idEl.value) return;
+    if (idEl.value) { idEl.value = ''; renderPreview(); }
+    matchedKey_ = '';
     lastCustLookupKey_ = '';
     document.getElementById('custMatchHint').textContent = '';
-    renderPreview();
-  }
+  });
 });
 
+// "9876543210|ramesh kumar" - phone normalised to 10 digits, name compared
+// ignoring capitals and extra spaces (same rule as the server).
 function currentCustLookupKey_() {
   const phone = normalizeMobile_(document.getElementById('f_phone').value);
   const name = vLine_(document.getElementById('f_customerName').value).toLowerCase();
-  return phone ? 'p:' + phone : (name ? 'n:' + name : '');
+  return phone + '|' + name;
+}
+
+// Shows "already on this number: [Name] [Name]" - tapping a name picks that
+// existing patient, so a slightly different spelling never creates a
+// duplicate by accident. Built with DOM nodes (names are never parsed as HTML).
+function showSamePhoneHint_(hint, list) {
+  hint.textContent = '';
+  hint.style.color = 'var(--muted)';
+  hint.appendChild(document.createTextNode('New patient on this number - a new Patient ID will be created. Already registered on this number: '));
+  list.forEach((p, i) => {
+    if (i) hint.appendChild(document.createTextNode(', '));
+    const link = document.createElement('a');
+    link.href = '#';
+    link.textContent = p.name + ' (' + p.customerId + ')';
+    link.style.color = 'var(--primary)';
+    link.style.fontWeight = '600';
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      document.getElementById('f_customerName').value = p.name;
+      lastCustLookupKey_ = '';
+      tryMatchCustomer();
+    });
+    hint.appendChild(link);
+  });
+  hint.appendChild(document.createTextNode(' - tap a name if it is the same person.'));
 }
 
 async function tryMatchCustomer() {
   const phoneRaw = document.getElementById('f_phone').value.trim();
   const phone = normalizeMobile_(phoneRaw);
   const name = vLine_(document.getElementById('f_customerName').value);
-  // A half-typed phone number can never match anyone - looking it up used
-  // to announce "New patient" and wipe a correct match. Wait until it's a
-  // complete, valid mobile number.
-  if (phoneRaw && !/^[6-9]\d{9}$/.test(phone)) return;
-  if (!phone && name.length < 2) return;
+  // Both are needed to identify a patient. A half-typed number can never
+  // match anyone, so wait until it's a complete, valid mobile number.
+  if (!/^[6-9]\d{9}$/.test(phone) || name.length < 2) return;
   const key = currentCustLookupKey_();
-  // Leaving the name field after the phone already matched used to fire the
-  // exact same lookup a second time - skip a repeat of the last lookup.
+  // Leaving the second field after a match used to fire the exact same
+  // lookup again - skip a repeat of the last lookup.
   if (key === lastCustLookupKey_) return;
   lastCustLookupKey_ = key;
   const hint = document.getElementById('custMatchHint');
@@ -1716,17 +1742,21 @@ async function tryMatchCustomer() {
     if (r.ok && r.found) {
       const c = r.customer;
       document.getElementById('f_customerId').value = c.customerId;
-      matchedPhone_ = normalizeMobile_(c.phone) || phone;
+      matchedKey_ = key;
       document.getElementById('f_email').value = c.email || document.getElementById('f_email').value;
       document.getElementById('f_address').value = c.address || document.getElementById('f_address').value;
       document.getElementById('f_deliveryAddress').value = c.deliveryAddress || document.getElementById('f_deliveryAddress').value;
-      hint.textContent = 'Existing patient matched and auto-filled.';
+      hint.textContent = 'Existing patient ' + c.customerId + ' matched and auto-filled.';
       hint.style.color = 'var(--success)';
     } else if (r.ok) {
       document.getElementById('f_customerId').value = '';
-      matchedPhone_ = '';
-      hint.textContent = 'New patient - a Patient ID will be created on save.';
-      hint.style.color = 'var(--muted)';
+      matchedKey_ = '';
+      if (r.samePhone && r.samePhone.length) {
+        showSamePhoneHint_(hint, r.samePhone);
+      } else {
+        hint.textContent = 'New patient - a Patient ID will be created on save.';
+        hint.style.color = 'var(--muted)';
+      }
     } else {
       lastCustLookupKey_ = ''; // let the next blur try again
     }
@@ -2197,7 +2227,7 @@ async function resetBillingForm() {
 
   setBillDateToday_();
   billSaveToken_ = newSaveToken_(); // the next bill is a different bill
-  lastCustLookupKey_ = '';
+  lastCustLookupKey_ = ''; matchedKey_ = '';
   clearErrorsIn_(document.getElementById('view-billing'));
   applyRoleToUI(); // also resets Tax/Bank/Discount toggles to their per-bill defaults
   addProductRow();
