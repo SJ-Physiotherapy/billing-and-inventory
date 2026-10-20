@@ -14,8 +14,8 @@ const CONFIG = {
 // Bump this whenever you redeploy app.js - printed on load so you can
 // confirm in the browser console (F12) that the page is actually running
 // the file you think it's running, not a cached older copy.
-const FRONTEND_BUILD = 'SJP-2026-10-20-36-PHONEPICK';
-const EXPECTED_BACKEND_BUILD = 'SJP-2026-10-20-01-PHONEPICK'; // must match BACKEND_BUILD in Code.gs
+const FRONTEND_BUILD = 'SJP-2026-10-21-40-RCPTGRID';
+const EXPECTED_BACKEND_BUILD = 'SJP-2026-10-21-02-NOLIMIT'; // must match BACKEND_BUILD in Code.gs
 console.log('SJP billing app.js build', FRONTEND_BUILD);
 
 // Shows a impossible-to-miss banner at the top of the app the moment we can
@@ -153,7 +153,7 @@ const VR = {
 };
 const VLIMIT = {
   MONEY_MAX: 10000000, QTY_MAX: 9999, STOCK_MAX: 999999, THRESHOLD_MAX: 99999,
-  ITEMS_MAX: 100, ADDRESS_MAX: 250, NOTE_MAX: 200
+  ADDRESS_MAX: 250, NOTE_MAX: 200
 };
 
 // ---- Validators (same names, same behaviour as Code.gs) -----------------
@@ -1700,6 +1700,13 @@ function localPatientsForPhone_(phone) {
     .map(c => ({ customerId: String(c.id), name: vLine_(c.name), phone: phone, partial: true }));
 }
 
+// '2026-10-12' -> '12 Oct 2026' (fixed English months, same on every device).
+const SHORT_MONTHS_ = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function shortDate_(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? Number(m[3]) + ' ' + SHORT_MONTHS_[Number(m[2]) - 1] + ' ' + m[1] : String(ymd || '');
+}
+
 function hidePhonePatientList_() {
   clearTimeout(phonePick_.timer);
   phonePick_.phone = ''; phonePick_.patients = []; phonePick_.synced = false; phonePick_.seq++;
@@ -1807,6 +1814,15 @@ function renderPhonePatientList_() {
     btn.setAttribute('aria-selected', isSel ? 'true' : 'false');
     const tick = document.createElement('span'); tick.className = 'pp-tick'; tick.textContent = isSel ? '✓' : '';
     const name = document.createElement('span'); name.className = 'pp-name'; name.textContent = c.name || '(no name)';
+    // Last visit helps tell family members apart. It arrives with the server
+    // refresh (the instant list doesn't have it yet) - rows never re-order
+    // when it lands, so a tap can't hit a row that just moved.
+    if (c.lastVisit !== undefined) {
+      const visit = document.createElement('span');
+      visit.className = 'pp-visit';
+      visit.textContent = c.lastVisit ? 'Last visit ' + shortDate_(c.lastVisit) : 'No visits yet';
+      name.appendChild(visit);
+    }
     const id = document.createElement('span'); id.className = 'pp-id'; id.textContent = c.customerId;
     btn.append(tick, name, id);
     btn.addEventListener('click', () => pickPatientFromList_(c));
@@ -2221,8 +2237,8 @@ function validateBillForm() {
   const discountsOn = document.getElementById('f_showDiscountToggle').classList.contains('on');
   const checks = [
     ['f_date', vDate_(document.getElementById('f_date').value, 'Date'), 'date'],
-    ['f_customerName', billPatientNameCheck_(), 'customerName'],
     ['f_phone', vMobile_(document.getElementById('f_phone').value, 'Phone Number', true), 'phone'],
+    ['f_customerName', billPatientNameCheck_(), 'customerName'],
     ['f_email', vEmail_(document.getElementById('f_email').value, 'Email', false), 'email'],
     ['f_address', vAddress_(document.getElementById('f_address').value, 'Address'), 'address'],
     ['f_deliveryAddress', vAddress_(document.getElementById('f_deliveryAddress').value, 'Delivery Address'), 'deliveryAddress']
@@ -2262,7 +2278,7 @@ function validateBillForm() {
   const result = applyChecks_(checks);
   if (!result.ok) { toast(result.firstError, 'error'); return null; }
   if (!items.length) { toast('Add at least one service/treatment line.', 'error'); return null; }
-  if (items.length > VLIMIT.ITEMS_MAX) { toast('A bill can have at most ' + VLIMIT.ITEMS_MAX + ' lines.', 'error'); return null; }
+  // No limit on the number of lines - a bill holds as many items as it has.
   result.values.items = items;
   if (!discountsOn) result.values.discountPercent = 0;
   return result.values;
@@ -2372,7 +2388,14 @@ async function saveBill() {
       taxOverride: payload.taxOverride === 'TRUE',
       paymentMethod: payload.paymentMethod,
       phone: payload.phone,
-      email: payload.email
+      email: payload.email,
+      // For the thermal receipt (same values the saved bill shows)
+      customerId: r.customerId,
+      address: payload.address,
+      billerName: state.session.role === 'biller'
+        ? state.session.billerName
+        : ((state.billers.find(b => b.billerId === billerId) || {}).name || billerId),
+      bankOverride: payload.bankOverride === 'TRUE' ? true : (payload.bankOverride === 'FALSE' ? false : undefined)
     });
 
     setTimeout(resetBillingForm, 1500);
@@ -3184,21 +3207,179 @@ initDashboardFilters();
 document.getElementById('lookupBtn').addEventListener('click', doLookup);
 document.getElementById('lookupBillId').addEventListener('keydown', e => { if (e.key === 'Enter') doLookup(); });
 
-async function doLookup() {
-  // "12", "sjp12" or "SJP-000012" all find the same bill.
-  const inputEl = document.getElementById('lookupBillId');
-  const billId = normalizeBillId_(inputEl.value);
-  const resultBox = document.getElementById('lookupResult');
-  if (!billId) return;
-  inputEl.value = billId;
-  resultBox.innerHTML = '<p>Searching...</p>';
-  const r = await apiGet('getBill', { billId });
-  if (!r.ok) { resultBox.innerHTML = `<p style="color:var(--danger);">${escapeHtml(r.error)}</p>`; return; }
-  renderLookupResult(r.bill);
+// The search box takes EITHER a Bill ID ("12", "sjp12", "SJP-000012") OR a
+// 10-digit phone number ("9876543210", "+91 98765 43210"). A phone number
+// lists every bill on that number - the whole family - to open from.
+// (Bill IDs are 6 digits, so a full mobile number can never be mistaken
+// for one.)
+function lookupLooksLikePhone_(raw) {
+  const v = String(raw || '').trim();
+  return /^[\d\s+\-()]+$/.test(v) && /^[6-9]\d{9}$/.test(normalizeMobile_(v));
 }
 
+// Remembers the phone search a bill was opened from, so "Back to bills"
+// works - also after saving a correction to that bill.
+let lookupPhoneCtx_ = null; // { phone, filter, openedBillId }
 
+async function doLookup() {
+  const inputEl = document.getElementById('lookupBillId');
+  const resultBox = document.getElementById('lookupResult');
+  if (lookupLooksLikePhone_(inputEl.value)) {
+    const phone = normalizeMobile_(inputEl.value);
+    inputEl.value = phone;
+    lookupPhoneCtx_ = null;
+    return runPhoneBillSearch_(phone, 'all');
+  }
+  // "12", "sjp12" or "SJP-000012" all find the same bill.
+  const billId = normalizeBillId_(inputEl.value);
+  if (!billId) return;
+  inputEl.value = billId;
+  // Opened from a phone list (or re-opened after saving a correction)? Keep
+  // the way back. Any other bill searched by hand starts fresh.
+  const ctx = (lookupPhoneCtx_ && lookupPhoneCtx_.openedBillId === billId) ? lookupPhoneCtx_ : null;
+  lookupPhoneCtx_ = ctx;
+  resultBox.innerHTML = '<p>Searching...</p>';
+  const r = await apiGet('getBill', { billId });
+  if (!r.ok) { resultBox.innerHTML = `<p style="color:var(--danger);">${escapeHtml(r.error)}</p>`; addLookupBackBar_(resultBox, ctx); return; }
+  renderLookupResult(r.bill);
+  addLookupBackBar_(resultBox, ctx);
+}
 
+function addLookupBackBar_(resultBox, ctx) {
+  if (!ctx) return;
+  const bar = document.createElement('div');
+  bar.className = 'lookup-back';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-outline btn-sm';
+  btn.textContent = '← Back to bills for ' + ctx.phone;
+  btn.addEventListener('click', () => {
+    document.getElementById('lookupBillId').value = ctx.phone;
+    // Re-fetched (not a stale copy) so a correction just saved shows up.
+    runPhoneBillSearch_(ctx.phone, ctx.filter);
+  });
+  bar.appendChild(btn);
+  resultBox.insertBefore(bar, resultBox.firstChild);
+}
+
+let phoneBillSearchSeq_ = 0;
+async function runPhoneBillSearch_(phone, filter) {
+  const resultBox = document.getElementById('lookupResult');
+  const seq = ++phoneBillSearchSeq_;
+  resultBox.innerHTML = '<p>Searching all bills for ' + escapeHtml(phone) + '...</p>';
+  let r;
+  try { r = await apiGet('getBillsByPhone', { phone }); } catch (e) { r = { ok: false, error: 'Network error - please try again.' }; }
+  if (seq !== phoneBillSearchSeq_) return; // a newer search has started
+  if (!r.ok) {
+    // Website updated but Code.gs not redeployed yet -> explain, don't confuse.
+    const msg = /Unknown GET action/.test(r.error || '')
+      ? 'Phone search needs the latest Code.gs to be deployed. You can still search by Bill ID.'
+      : (r.error || 'Search failed.');
+    resultBox.innerHTML = `<p style="color:var(--danger);">${escapeHtml(msg)}</p>`;
+    return;
+  }
+  renderPhoneBillList_(r, filter || 'all');
+}
+
+// Bills for one number: patient filter chips (when several family members
+// have bills) + one tappable row per bill, newest first.
+function renderPhoneBillList_(r, filter) {
+  const resultBox = document.getElementById('lookupResult');
+  resultBox.textContent = '';
+  const bills = r.bills || [];
+  const wrap = document.createElement('div');
+  wrap.className = 'phone-bills';
+
+  const head = document.createElement('div');
+  head.className = 'phone-bills-head';
+  const title = document.createElement('h3');
+  title.textContent = bills.length
+    ? (r.total === 1 ? '1 bill' : r.total + ' bills') + ' for ' + r.phone
+    : 'No bills found for ' + r.phone;
+  head.appendChild(title);
+  if (r.truncated) {
+    const note = document.createElement('p');
+    note.className = 'phone-bills-note';
+    note.textContent = 'Showing the latest ' + bills.length + '. Search by Bill ID for older ones.';
+    head.appendChild(note);
+  }
+  wrap.appendChild(head);
+  if (!bills.length) {
+    const empty = document.createElement('p');
+    empty.className = 'phone-bills-note';
+    empty.textContent = 'Check the number, or search by Bill ID instead.';
+    wrap.appendChild(empty);
+    resultBox.appendChild(wrap);
+    return;
+  }
+
+  // Patients on this number, in order of their most recent bill.
+  const patients = [];
+  const byId = {};
+  bills.forEach(b => {
+    const key = b.customerId || ('name:' + b.customerName.toLowerCase());
+    if (!byId[key]) { byId[key] = { key, name: b.customerName, id: b.customerId, count: 0 }; patients.push(byId[key]); }
+    byId[key].count++;
+  });
+  if (filter !== 'all' && !byId[filter]) filter = 'all';
+
+  const listEl = document.createElement('div');
+  listEl.className = 'phone-bills-list';
+  const drawRows = () => {
+    listEl.textContent = '';
+    bills.filter(b => filter === 'all' || (b.customerId || ('name:' + b.customerName.toLowerCase())) === filter).forEach(b => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'phone-bill-row';
+      row.setAttribute('aria-label', 'Open bill ' + b.billId);
+      const when = document.createElement('span'); when.className = 'pb-when';
+      const d = document.createElement('span'); d.className = 'pb-date'; d.textContent = shortDate_(b.date) || '-';
+      const id = document.createElement('span'); id.className = 'pb-id'; id.textContent = b.billId;
+      when.append(d, id);
+      const who = document.createElement('span'); who.className = 'pb-who';
+      who.textContent = b.customerName || '(no name)';
+      if (b.customerId) { const pid = document.createElement('span'); pid.className = 'pb-pid'; pid.textContent = b.customerId; who.appendChild(pid); }
+      const amt = document.createElement('span'); amt.className = 'pb-amt';
+      const money = document.createElement('span'); money.className = 'pb-money'; money.textContent = formatMoney(b.totalAmount);
+      const meta = document.createElement('span'); meta.className = 'pb-meta';
+      meta.textContent = [b.paymentMethod === 'Bank' ? 'Bank' : (b.paymentMethod ? 'Cash' : ''), b.editable ? '' : 'Archived'].filter(Boolean).join(' · ');
+      amt.append(money, meta);
+      row.append(when, who, amt);
+      row.addEventListener('click', () => {
+        lookupPhoneCtx_ = { phone: r.phone, filter: filter, openedBillId: b.billId };
+        document.getElementById('lookupBillId').value = b.billId;
+        doLookup();
+      });
+      listEl.appendChild(row);
+    });
+  };
+
+  if (patients.length > 1) {
+    const chips = document.createElement('div');
+    chips.className = 'phone-bills-chips';
+    chips.setAttribute('role', 'group');
+    chips.setAttribute('aria-label', 'Show bills for');
+    const addChip = (key, label) => {
+      const c = document.createElement('button');
+      c.type = 'button';
+      c.className = 'pb-chip' + (filter === key ? ' active' : '');
+      c.setAttribute('aria-pressed', filter === key ? 'true' : 'false');
+      c.textContent = label;
+      c.addEventListener('click', () => {
+        filter = key;
+        chips.querySelectorAll('.pb-chip').forEach(x => { const on = x === c; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        drawRows();
+      });
+      chips.appendChild(c);
+    };
+    addChip('all', 'All (' + bills.length + ')');
+    patients.forEach(p => addChip(p.key, p.name + (p.id ? ' · ' + p.id : '') + ' (' + p.count + ')'));
+    wrap.appendChild(chips);
+  }
+  drawRows();
+  wrap.appendChild(listEl);
+  resultBox.appendChild(wrap);
+}
 
 let editRowCounter = 0;
 
@@ -3489,7 +3670,7 @@ function renderLookupResult(bill) {
     <div class="panel" style="margin-top:16px;">
       <h3>PDF Version</h3>
       <p class="field-hint" style="margin:-4px 0 12px;">Shown at the exact size and proportions it will print, download or email at - scaled to fit your screen, not reflowed to it.</p>
-      <button id="lookupDownloadPdfBtn" class="btn btn-accent btn-sm print-hide" style="margin-bottom:14px;">&#11015;&#65039; Download / Print PDF</button>
+      <button id="lookupDownloadPdfBtn" class="btn btn-accent btn-sm print-hide" style="margin-bottom:14px;">&#11015;&#65039; Download / Print A4 PDF</button>
       <button id="lookupShareBtn" class="btn btn-outline btn-sm print-hide" style="margin-bottom:14px; margin-left:8px;">&#128228; Share Bill</button>
       <div class="bill-scale-outer" id="lookupBillScaleOuter">${renderLookupBillPaper(bill)}</div>
     </div>
@@ -3511,7 +3692,11 @@ function renderLookupResult(bill) {
         taxOverride: bill.taxOverride === 'TRUE',
         paymentMethod: bill.paymentMethod,
         phone: bill.phone,
-        email: bill.email
+        email: bill.email,
+        customerId: bill.customerId,
+        address: bill.address,
+        billerName: bill.billerName,
+        bankOverride: bill.bankOverride === 'TRUE' ? true : (bill.bankOverride === 'FALSE' ? false : undefined)
       });
     });
     return; // no edit form was rendered, so nothing else below applies
@@ -3568,7 +3753,11 @@ function renderLookupResult(bill) {
       taxOverride: bill.taxOverride === 'TRUE',
       paymentMethod: bill.paymentMethod,
       phone: bill.phone,
-      email: bill.email
+      email: bill.email,
+      customerId: bill.customerId,
+      address: bill.address,
+      billerName: bill.billerName,
+      bankOverride: bill.bankOverride === 'TRUE' ? true : (bill.bankOverride === 'FALSE' ? false : undefined)
     });
   });
 
@@ -5540,6 +5729,7 @@ function openShareModal(billId, titleText, shareData) {
   document.getElementById('shareStatus').className = 'biller-status';
   shareMethod = null;
   state.shareData = shareData; // { customerName, date, items, totalDiscountPct, taxOverride, paymentMethod }
+  markCounterPrinter_();
   document.getElementById('shareBillModal').classList.add('show');
 }
 
@@ -5601,6 +5791,415 @@ document.getElementById('shareViaWhatsappBtn').addEventListener('click', () => {
 // prints - never a half-filled form.
 document.getElementById('sharePrintBtn').addEventListener('click', () => window.print());
 document.getElementById('shareDownloadPdfBtn').addEventListener('click', () => window.print());
+
+// =========================================================================
+// 16c. THERMAL RECEIPTS - 58 mm / 80 mm / 112 mm roll printers
+//
+// A receipt is NOT the A4 bill shrunk down - each roll width gets its own
+// layout, built for how thermal printers actually behave:
+//   - Pure black only. Thermal heads can't print grey; grey text comes out
+//     as a speckled dot pattern, so every colour is #000.
+//   - Text sized in points for a 203-dpi head (nothing below 7.5pt).
+//   - The printable strip is narrower than the paper (58 -> 48 mm,
+//     80 -> 72 mm, 112 -> 104 mm), so content sits inside it, centred.
+//   - The page is EXACTLY as long as the receipt: its height is measured
+//     after rendering and written into @page, so the printer stops at the
+//     end of the receipt instead of feeding a full A4 length of blank roll.
+//   - A little blank tail at the end so the auto-cutter (which sits above
+//     the print head) never slices through the last line.
+// Numbers come from computeBillTotals() - the very same function the A4
+// bill and the live preview use - so a receipt can never disagree with the
+// bill. Nothing here talks to the server or the database.
+// =========================================================================
+const RECEIPT_SIZES = {
+  58:  { paper: 58,  print: 48,  base: 8,    small: 7.5, title: 11.5, grand: 12.5, logoH: 14, layout: 'stack' },
+  80:  { paper: 80,  print: 72,  base: 9,    small: 8,   title: 13.5, grand: 14.5, logoH: 18, layout: 'cols' },
+  112: { paper: 112, print: 104, base: 10,   small: 8.5, title: 15.5, grand: 16.5, logoH: 22, layout: 'wide' }
+};
+const RECEIPT_FEED_MM = 9;     // blank tail for the cutter
+const RECEIPT_PREF_KEY = 'sjp_receipt_prefs';
+
+function receiptPrefs_() {
+  try {
+    const p = JSON.parse(localStorage.getItem(RECEIPT_PREF_KEY) || '{}');
+    return { size: RECEIPT_SIZES[p.size] ? Number(p.size) : 80, logo: p.logo !== false };
+  } catch (e) { return { size: 80, logo: true }; }
+}
+function saveReceiptPrefs_(p) {
+  try { localStorage.setItem(RECEIPT_PREF_KEY, JSON.stringify(p)); } catch (e) { /* private mode - fine */ }
+}
+// Tags the receipt size this phone/PC printed last as "this counter's
+// printer" in the Share popup, so the right roll is the obvious choice.
+function markCounterPrinter_() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(RECEIPT_PREF_KEY) || 'null'); } catch (e) { saved = null; }
+  document.querySelectorAll('#shareReceiptRow button[data-size]').forEach(btn => {
+    const mine = !!saved && Number(btn.dataset.size) === Number(saved.size);
+    btn.classList.toggle('is-counter', mine);
+    const tag = btn.querySelector('.counter-tag');
+    if (tag) tag.hidden = !mine;
+  });
+}
+
+// ---- Amount in words, Indian system (lakh / crore) ----------------------
+const IN_ONES_ = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+  'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+const IN_TENS_ = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+function inWordsBelow100_(n) { return n < 20 ? IN_ONES_[n] : IN_TENS_[Math.floor(n / 10)] + (n % 10 ? ' ' + IN_ONES_[n % 10] : ''); }
+function inWordsBelow1000_(n) {
+  const h = Math.floor(n / 100), r = n % 100;
+  return (h ? IN_ONES_[h] + ' Hundred' + (r ? ' ' : '') : '') + (r ? inWordsBelow100_(r) : '');
+}
+function intToWordsIN_(n) {
+  if (n === 0) return 'Zero';
+  const parts = [];
+  const crore = Math.floor(n / 10000000); n %= 10000000;
+  const lakh = Math.floor(n / 100000); n %= 100000;
+  const thousand = Math.floor(n / 1000); n %= 1000;
+  if (crore) parts.push(intToWordsIN_(crore) + ' Crore');
+  if (lakh) parts.push(inWordsBelow100_(lakh) + ' Lakh');
+  if (thousand) parts.push(inWordsBelow100_(thousand) + ' Thousand');
+  if (n) parts.push(inWordsBelow1000_(n));
+  return parts.join(' ');
+}
+// 1250.5 -> "Rupees One Thousand Two Hundred Fifty and Fifty Paise Only"
+function amountInWordsIN_(amount) {
+  const paiseTotal = Math.round((Number(amount) || 0) * 100);
+  const rupees = Math.floor(paiseTotal / 100), paise = paiseTotal % 100;
+  let out = 'Rupees ' + intToWordsIN_(rupees);
+  if (paise) out += ' and ' + inWordsBelow100_(paise) + ' Paise';
+  return out + ' Only';
+}
+
+// Everything a receipt shows, worked out once from the bill + shop settings.
+function buildReceiptModel_(billId, sd) {
+  const s = state.settings || {};
+  const items = (sd.items || []).map(i => ({ name: String(i.name || ''), price: Number(i.price) || 0, qty: Number(i.qty) || 0, discountPercent: Number(i.discountPercent) || 0 }));
+  const totals = computeBillTotals(items, Number(sd.totalDiscountPct) || 0, sd.taxOverride === true);
+  const showBank = (sd.bankOverride === undefined || sd.bankOverride === null) ? (s.ShowBankDetails !== false) : !!sd.bankOverride;
+  const logo = s.PrintLogoURL || s.LogoURL || '';
+  const now = getISTParts_(new Date());
+  const h = Number(now.hour), ampm = h >= 12 ? 'PM' : 'AM';
+  return {
+    s, billId: String(billId || ''), totals,
+    totalQty: totals.items.reduce((a, i) => a + i.qty, 0),
+    date: shortDate_(formatBillDate(sd.date)),
+    customerName: vLine_(sd.customerName) || '-',
+    customerId: String(sd.customerId || ''),
+    phone: normalizeMobile_(sd.phone) || String(sd.phone || ''),
+    address: vLine_(sd.address || ''),
+    billerName: vLine_(sd.billerName || ''),
+    paymentLabel: paymentMethodLabel(sd.paymentMethod),
+    showBank,
+    logo: /^https?:\/\//i.test(logo) ? logo : '',
+    printedAt: shortDate_(now.year + '-' + now.month + '-' + now.day) + ', ' + ((h % 12) || 12) + ':' + now.minute + ' ' + ampm
+  };
+}
+
+// Money without the symbol for table columns ("1,250.00"), with it for totals.
+function rcptNum_(n) { return (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function rcptMoney_(n) { return '₹' + rcptNum_(n); }
+
+function buildReceiptDocHtml_(m, sizeKey, opts) {
+  const z = RECEIPT_SIZES[sizeKey];
+  const s = m.s;
+  const e = escapeHtml;
+  const t = m.totals, tax = t.tax;
+  const side = ((z.paper - z.print) / 2).toFixed(1);
+  const hasItemDisc = t.itemDiscountTotal > 0.004;
+
+  // ---- Header -----------------------------------------------------------
+  const addrLines = String(s.Address || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
+  let head = '';
+  if (opts.logo && m.logo) head += `<img class="logo" src="${e(m.logo)}" alt="">`;
+  head += `<div class="shop">${e(s.CompanyName || 'SJ Physiotherapy')}</div>`;
+  if (addrLines.length) head += `<div class="c">${addrLines.map(e).join('<br>')}</div>`;
+  const contact = [];
+  if (s.Phone) contact.push('Ph: ' + e(s.Phone));
+  if (sizeKey !== 58 && s.ShowCompanyEmail !== false && s.CompanyEmail) contact.push(e(s.CompanyEmail));
+  if (contact.length) head += `<div class="c">${contact.join(sizeKey === 58 ? '<br>' : ' &nbsp;|&nbsp; ')}</div>`;
+  if (sizeKey !== 58 && s.Website) head += `<div class="c">${e(s.Website)}</div>`;
+  if (s.GSTNumber) head += `<div class="c b">GSTIN: ${e(s.GSTNumber)}</div>`;
+
+  const docTitle = 'INVOICE';
+
+  // ---- Bill + patient details (label : value rows) ----------------------
+  const kv = (k, v) => `<div class="k">${k}</div><div class="colon">:</div><div class="v">${v}</div>`;
+  let meta = kv('Bill No', `<b>${e(m.billId)}</b>`) + kv('Date', e(m.date));
+  meta += kv('Patient', `<b>${e(m.customerName)}</b>`);
+  if (m.customerId) meta += kv('Patient ID', e(m.customerId));
+  if (m.phone) meta += kv('Phone', e(m.phone));
+  if (sizeKey === 112 && m.address) meta += kv('Address', e(m.address));
+
+  // ---- Items: a different layout per roll width ---------------------------
+  let itemsHtml = '';
+  if (z.layout === 'stack') {
+    // 58 mm: ~32 characters a line - name on its own line, the maths below.
+    itemsHtml = '<div class="items">' + t.items.map(i => `
+      <div class="it">
+        <div class="it-name">${e(i.name)}</div>
+        <div class="it-row"><span>${i.qty} x ${rcptNum_(i.price)}${i.discountPercent > 0 ? ' <span class="disc">-' + i.discountPercent + '%</span>' : ''}</span><span class="b">${rcptNum_(i.lineTotal)}</span></div>
+      </div>`).join('') + '</div>';
+  } else {
+    // 80 / 112 mm: one CSS grid for the header and every row, so columns
+    // line up exactly like a table - but WITHOUT a table. Chrome on Windows
+    // (at some zoom / display-scaling levels) clipped the bottom of table
+    // header text and drew the thin line under it as broken dots. The line
+    // is now its own element, drawn exactly like the dashed separators.
+    const wide = z.layout === 'wide';
+    const showDiscCol = wide && hasItemDisc;
+    const cols = (wide ? ['n'] : []).concat(['l', 'num', 'num'], showDiscCol ? ['num'] : [], ['num']);
+    const heads = (wide ? ['#'] : []).concat(['Item', 'Qty', 'Rate'], showDiscCol ? ['Disc'] : [], ['Amount']);
+    let cells = heads.map((h, k) => `<div class="ih ${cols[k]}">${h}</div>`).join('') + '<div class="irule"></div>';
+    t.items.forEach((i, k) => {
+      const discNote = (!showDiscCol && i.discountPercent > 0) ? `<div class="disc">Disc ${i.discountPercent}% (-${rcptNum_(i.gross - i.lineTotal)})</div>` : '';
+      if (wide) cells += `<div class="ic n">${k + 1}</div>`;
+      cells += `<div class="ic l">${e(i.name)}${discNote}</div><div class="ic num">${i.qty}</div><div class="ic num">${rcptNum_(i.price)}</div>`;
+      if (showDiscCol) cells += `<div class="ic num">${i.discountPercent > 0 ? i.discountPercent + '%' : '-'}</div>`;
+      cells += `<div class="ic num b">${rcptNum_(i.lineTotal)}</div>`;
+    });
+    const tpl = cols.map(c => c === 'l' ? 'minmax(0, 1fr)' : 'auto').join(' ');
+    itemsHtml = `<div class="igrid" style="grid-template-columns:${tpl};">${cells}</div>`;
+  }
+
+  // ---- Totals -------------------------------------------------------------
+  const row = (k, v, cls) => `<div class="tr${cls ? ' ' + cls : ''}"><span>${k}</span><span>${v}</span></div>`;
+  let tot = row('Items / Qty', t.items.length + ' / ' + m.totalQty);
+  tot += row('Subtotal', rcptMoney_(t.grossSubtotal));
+  if (hasItemDisc) tot += row('Item discount', '-' + rcptMoney_(t.itemDiscountTotal));
+  if (t.totalDiscPct > 0) tot += row('Addl. discount (' + t.totalDiscPct + '%)', '-' + rcptMoney_(t.totalDiscountAmount));
+  if (hasItemDisc || t.totalDiscPct > 0) tot += row('Net amount', rcptMoney_(t.netAmount));
+  if (tax.showTaxSection) {
+    if (tax.cgstPct >= 1) tot += row('CGST @ ' + tax.cgstPct + '%', rcptMoney_(tax.cgstAmount));
+    if (tax.sgstPct >= 1) tot += row('SGST @ ' + tax.sgstPct + '%', rcptMoney_(tax.sgstAmount));
+  }
+  const saved = t.itemDiscountTotal + t.totalDiscountAmount;
+
+  // ---- Footer -------------------------------------------------------------
+  let foot = row('Paid by', e(m.paymentLabel));
+  if (m.billerName) foot += row('Billed by', e(m.billerName));
+  let bank = '';
+  if (sizeKey !== 58 && m.showBank) {
+    const b = [];
+    if (s.BankName) b.push(e(s.BankName));
+    if (s.BankAccountNo) b.push('A/c ' + e(s.BankAccountNo));
+    if (s.BankIFSC) b.push('IFSC ' + e(s.BankIFSC));
+    if (s.BankAccountHolder) b.push(e(s.BankAccountHolder));
+    if (b.length) bank = `<div class="bank"><b>Bank:</b> ${b.join(' · ')}</div>`;
+  }
+
+  const css = `
+    @page { size: ${z.paper}mm 200mm; margin: 0; }
+    * { box-sizing: border-box; color: #000 !important; }
+    html, body { margin: 0; padding: 0; background: #fff; }
+    body {
+      width: ${z.paper}mm; padding: 3mm ${side}mm ${RECEIPT_FEED_MM}mm;
+      font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
+      font-size: ${z.base}pt; line-height: 1.4;
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
+    .r { width: ${z.print}mm; }
+    .center { text-align: center; }
+    .b { font-weight: 700; }
+    .logo { display: block; margin: 0 auto 1.5mm; max-width: 70%; max-height: ${z.logoH}mm; object-fit: contain;
+            filter: grayscale(1) contrast(1.25); }
+    .shop { font-size: ${z.title}pt; font-weight: 700; line-height: 1.25; margin-bottom: .8mm; text-transform: uppercase; letter-spacing: .02em; }
+    .c { font-size: ${z.small}pt; }
+    .hr { border-top: 1px dashed #000; margin: 1.6mm 0; height: 0; }
+    .hr2 { border-top: 1.6px solid #000; border-bottom: 1.6px solid #000; height: 2px; margin: 1.6mm 0; }
+    .doc { font-weight: 700; letter-spacing: .25em; font-size: ${z.base + 0.5}pt; line-height: 1.4; }
+    .meta { display: grid; grid-template-columns: auto auto minmax(0, 1fr); column-gap: 1.4mm; row-gap: .3mm; line-height: 1.4; }
+    .meta .k { white-space: nowrap; }
+    .meta .v { min-width: 0; overflow-wrap: anywhere; }
+    .igrid { display: grid; column-gap: 1.6mm; align-items: start; }
+    .ih { font-size: ${z.small}pt; font-weight: 700; line-height: 1.45; padding-bottom: .6mm; white-space: nowrap; }
+    .irule { grid-column: 1 / -1; border-top: 1px solid #000; height: 0; margin-bottom: .4mm; }
+    .ic { line-height: 1.4; padding: .7mm 0 .5mm; }
+    .igrid .num { text-align: right; white-space: nowrap; }
+    .igrid .l { text-align: left; min-width: 0; overflow-wrap: anywhere; }
+    .igrid .n { text-align: left; white-space: nowrap; }
+    .disc { font-size: ${z.small}pt; line-height: 1.4; }
+    .it { padding: .7mm 0; }
+    .it + .it { border-top: 1px dashed #000; }
+    .it-name { font-weight: 700; }
+    .it-row, .tr { display: flex; justify-content: space-between; align-items: baseline; gap: 2mm; line-height: 1.4; }
+    .tr span:last-child { text-align: right; white-space: nowrap; }
+    .tr { padding: .2mm 0; }
+    .grand { font-size: ${z.grand}pt; font-weight: 700; padding: .8mm 0; line-height: 1.3; }
+    .grand span { white-space: nowrap; }
+    .grand-long { font-size: ${z.grand - 2.5}pt; }
+    .words { font-size: ${z.small}pt; font-style: italic; margin-top: .6mm; }
+    .saved { font-weight: 700; margin-top: .8mm; }
+    .bank { font-size: ${z.small}pt; margin-top: 1mm; }
+    .thanks { font-weight: 700; font-size: ${z.base + 0.5}pt; margin-top: .5mm; }
+    .tiny { font-size: ${z.small}pt; }
+    .end { font-size: ${z.small}pt; letter-spacing: .3em; margin-top: 1.2mm; }
+  `;
+
+  const body = `
+  <div class="r">
+    <div class="center">${head}</div>
+    <div class="hr2"></div>
+    <div class="center doc">${docTitle}</div>
+    <div class="hr"></div>
+    <div class="meta">${meta}</div>
+    <div class="hr"></div>
+    ${itemsHtml}
+    <div class="hr"></div>
+    ${tot}
+    <div class="hr2"></div>
+    ${row(sizeKey === 58 ? 'TOTAL' : 'GRAND TOTAL', rcptMoney_(tax.grandTotal), 'grand' + (rcptMoney_(tax.grandTotal).length > (sizeKey === 58 ? 10 : 12) ? ' grand-long' : ''))}
+    <div class="hr2"></div>
+    ${sizeKey !== 58 ? `<div class="words">${e(amountInWordsIN_(tax.grandTotal))}</div>` : ''}
+    ${saved > 0.004 ? `<div class="center saved">You saved ${rcptMoney_(saved)} today</div>` : ''}
+    <div class="hr"></div>
+    ${foot}
+    ${bank}
+    <div class="hr"></div>
+    <div class="center">
+      <div class="thanks">Thank you for choosing ${e(s.CompanyName || 'us')}!</div>
+      <div class="tiny" style="margin-top:1mm;">Computer-generated receipt</div>
+      <div class="tiny">Printed ${e(m.printedAt)}</div>
+      <div class="end">* * * * *</div>
+    </div>
+  </div>`;
+
+  return '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+    '<title>Receipt ' + e(m.billId) + ' (' + sizeKey + 'mm)</title>' +
+    '<style id="rcptBase">' + css + '</style>' +
+    '<style id="rcptPage"></style>' +
+    '</head><body>' + body + '</body></html>';
+}
+
+// Writes a receipt into an iframe, waits for the logo (with a ceiling so a
+// slow or broken logo can never block printing), then sets @page to the
+// receipt's real measured length. Resolves once the frame is ready.
+function renderReceiptIntoFrame_(frame, html, paperMm) {
+  return new Promise(resolve => {
+    // Each render gets a token. If the person switches size again before a
+    // slow logo has loaded, the older render's late finish is ignored - it
+    // can never stamp its page size onto the receipt now showing.
+    const token = Date.now().toString(36) + Math.random().toString(36).slice(2);
+    frame.dataset.rtoken = token;
+    const doc = frame.contentWindow.document;
+    doc.open(); doc.write(html); doc.close();
+    const finish = () => {
+      if (frame.dataset.rtoken !== token) return resolve(null);
+      // Hide a logo that failed to load rather than print a broken-image box.
+      Array.from(doc.images).forEach(img => { if (!img.complete || !img.naturalWidth) img.style.display = 'none'; });
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (frame.dataset.rtoken !== token) return resolve(null);
+        // Measure the receipt itself - NOT the document's scrollHeight, which
+        // is never smaller than the preview window's current height (so
+        // switching from a long 58 mm receipt to a shorter 80 mm one used to
+        // keep the old, longer page and feed blank paper).
+        const px = Math.ceil(doc.body.getBoundingClientRect().height);
+        const mm = Math.ceil(px * 25.4 / 96) + 1;
+        doc.getElementById('rcptPage').textContent = '@page { size: ' + paperMm + 'mm ' + mm + 'mm; margin: 0; }';
+        resolve({ heightPx: px, heightMm: mm });
+      }));
+    };
+    const imgs = Array.from(doc.images).filter(i => !i.complete);
+    if (!imgs.length) return finish();
+    let left = imgs.length, done = false;
+    const one = () => { if (--left <= 0 && !done) { done = true; finish(); } };
+    imgs.forEach(i => { i.addEventListener('load', one, { once: true }); i.addEventListener('error', one, { once: true }); });
+    setTimeout(() => { if (!done) { done = true; finish(); } }, 3500);
+  });
+}
+
+// ---- Receipt preview window ----------------------------------------------
+const receiptView_ = { size: 80, logo: true, billId: '', data: null, ready: false };
+
+function openReceiptPreview_(sizeKey) {
+  const sd = state.shareData;
+  const billId = document.getElementById('share_billId').value;
+  if (!sd || !billId || !(sd.items || []).length) { toast('Open a saved bill first.', 'error'); return; }
+  const prefs = receiptPrefs_();
+  receiptView_.size = RECEIPT_SIZES[sizeKey] ? sizeKey : prefs.size;
+  receiptView_.logo = prefs.logo;
+  receiptView_.billId = billId;
+  receiptView_.data = sd;
+  document.getElementById('receiptTitle').textContent = 'Thermal Receipt - ' + billId;
+  document.getElementById('receiptLogoToggle').checked = receiptView_.logo;
+  document.getElementById('receiptModal').classList.add('show');
+  drawReceiptPreview_();
+}
+
+async function drawReceiptPreview_() {
+  const z = RECEIPT_SIZES[receiptView_.size];
+  document.querySelectorAll('#receiptSizeTabs button').forEach(b => {
+    const on = Number(b.dataset.size) === receiptView_.size;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  const printBtn = document.getElementById('receiptPrintBtn');
+  printBtn.disabled = true;
+  receiptView_.ready = false;
+  const frame = document.getElementById('receiptFrame');
+  // Shown at true physical width - 80 mm on screen is 80 mm of paper.
+  frame.style.width = z.paper + 'mm';
+  const model = buildReceiptModel_(receiptView_.billId, receiptView_.data);
+  const html = buildReceiptDocHtml_(model, receiptView_.size, { logo: receiptView_.logo });
+  const res = await renderReceiptIntoFrame_(frame, html, z.paper);
+  if (!res) return; // a newer size was picked meanwhile - it draws itself
+  frame.style.height = res.heightPx + 'px';
+  fitReceiptPaper_();
+  document.getElementById('receiptInfo').textContent =
+    z.paper + ' mm roll · prints ' + z.print + ' mm wide · ' + (res.heightMm / 10).toFixed(1) + ' cm of paper';
+  receiptView_.ready = true;
+  printBtn.disabled = false;
+  printBtn.textContent = 'Print ' + z.paper + ' mm receipt';
+}
+
+// True size when it fits; scaled down (never up) when the screen is
+// narrower than the roll - e.g. a 112 mm receipt on a phone.
+function fitReceiptPaper_() {
+  const stage = document.querySelector('#receiptModal .receipt-stage');
+  const paper = document.querySelector('#receiptModal .receipt-paper');
+  const frame = document.getElementById('receiptFrame');
+  paper.style.transform = '';
+  paper.style.marginBottom = '';
+  const avail = stage.clientWidth - 24;
+  const w = frame.offsetWidth;
+  if (avail > 0 && w > avail) {
+    const k = avail / w;
+    paper.style.transform = 'scale(' + k.toFixed(4) + ')';
+    paper.style.marginBottom = (-(frame.offsetHeight * (1 - k))).toFixed(1) + 'px';
+  }
+}
+window.addEventListener('resize', () => {
+  if (document.getElementById('receiptModal').classList.contains('show')) fitReceiptPaper_();
+});
+
+function printReceipt_() {
+  if (!receiptView_.ready) return;
+  saveReceiptPrefs_({ size: receiptView_.size, logo: receiptView_.logo });
+  markCounterPrinter_();
+  const frame = document.getElementById('receiptFrame');
+  try {
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+  } catch (e) {
+    toast('Could not open the print dialog. Please try again.', 'error');
+  }
+}
+
+document.querySelectorAll('#shareReceiptRow button[data-size]').forEach(b => {
+  b.addEventListener('click', () => openReceiptPreview_(Number(b.dataset.size)));
+});
+document.querySelectorAll('#receiptSizeTabs button').forEach(b => {
+  b.addEventListener('click', () => { receiptView_.size = Number(b.dataset.size); drawReceiptPreview_(); });
+});
+document.getElementById('receiptLogoToggle').addEventListener('change', e => {
+  receiptView_.logo = e.target.checked;
+  drawReceiptPreview_();
+});
+document.getElementById('receiptPrintBtn').addEventListener('click', printReceipt_);
+document.getElementById('receiptClose').addEventListener('click', () => {
+  document.getElementById('receiptModal').classList.remove('show');
+});
 
 function buildShareMessageText(billId, d) {
   const totals = computeBillTotals(d.items, d.totalDiscountPct || 0, d.taxOverride === true);

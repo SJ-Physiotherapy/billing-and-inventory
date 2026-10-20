@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>SJ Physiotherapy - Billing, Sales and Inventory Analysis System</title>
 <link rel="icon" href="https://sjphysiotherapy.in/LOGO/favicon.png" type="image/png">
-<link rel="stylesheet" href="style.css?v=20261020-36-phonepick">
+<link rel="stylesheet" href="style.css?v=20261021-40-rcptgrid">
 </head>
 <body>
 
@@ -124,16 +124,16 @@
                 <input id="f_billId" type="text" disabled placeholder="Auto generated">
               </div>
               <div class="field">
-                <label>Patient Name <span style="color:var(--danger)">*</span></label>
-                <input id="f_customerName" type="text" maxlength="60" autocomplete="off" placeholder="e.g. Ramesh Kumar">
-                <div class="field-error">Patient name is required</div>
-              </div>
-              <div class="field">
                 <label>Phone Number <span style="color:var(--danger)">*</span></label>
                 <input id="f_phone" type="tel" inputmode="numeric" autocomplete="off" placeholder="10-digit mobile number" aria-describedby="phoneLookupTip">
                 <div class="field-error">Valid phone number is required</div>
                 <div class="field-hint" id="phoneLookupTip">Returning patient? Just enter the phone number - everyone registered on it (family too) is listed below. No need to type the name.</div>
                 <div class="patient-pick" id="phonePatientList" hidden></div>
+              </div>
+              <div class="field">
+                <label>Patient Name <span style="color:var(--danger)">*</span></label>
+                <input id="f_customerName" type="text" maxlength="60" autocomplete="off" placeholder="e.g. Ramesh Kumar">
+                <div class="field-error">Patient name is required</div>
               </div>
               <div class="field">
                 <label>Patient ID</label>
@@ -565,12 +565,12 @@
       <div class="view-header">
         <div>
           <h2>Find / Edit Bill</h2>
-          <p>Search by Bill ID to view full details. Editing requires Super Admin login.</p>
+          <p>Search by Bill ID, or enter a phone number to see every bill on that number (the whole family). Editing requires Super Admin login.</p>
         </div>
       </div>
 
       <div class="lookup-search">
-        <input id="lookupBillId" type="text" autocomplete="off" placeholder="Bill ID - e.g. SJP-000012, or just 12">
+        <input id="lookupBillId" type="text" autocomplete="off" placeholder="Bill ID (e.g. 12) or phone number" aria-label="Bill ID or phone number">
         <button id="lookupBtn" class="btn btn-primary">Search</button>
       </div>
 
@@ -1524,10 +1524,18 @@
     <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
       <button type="button" class="btn btn-outline btn-sm" id="shareViaEmailBtn" style="flex:1;min-width:120px;">&#128231; Email</button>
       <button type="button" class="btn btn-outline btn-sm" id="shareViaWhatsappBtn" style="flex:1;min-width:120px;">&#128241; WhatsApp</button>
-      <button type="button" class="btn btn-outline btn-sm" id="sharePrintBtn" style="flex:1;min-width:120px;">&#128424;&#65039; Print</button>
-      <button type="button" class="btn btn-outline btn-sm" id="shareDownloadPdfBtn" style="flex:1;min-width:120px;">&#11015;&#65039; Save as PDF</button>
+      <button type="button" class="btn btn-outline btn-sm" id="sharePrintBtn" style="flex:1;min-width:120px;">&#128424;&#65039; Print A4</button>
+      <button type="button" class="btn btn-outline btn-sm" id="shareDownloadPdfBtn" style="flex:1;min-width:120px;">&#11015;&#65039; Save A4 as PDF</button>
     </div>
-    <p class="field-hint" style="margin:-6px 0 12px;">You can do more than one of these, one after another - this only closes when you click Close.</p>
+    <div class="share-receipt" id="shareReceiptRow">
+      <div class="share-receipt-label">&#129534; Thermal receipt <span>(POS roll printer)</span></div>
+      <div class="share-receipt-btns" role="group" aria-label="Thermal receipt paper width">
+        <button type="button" class="btn btn-outline btn-sm" data-size="58">58 mm receipt<span class="counter-tag" hidden>this counter's printer</span></button>
+        <button type="button" class="btn btn-outline btn-sm" data-size="80">80 mm receipt<span class="counter-tag" hidden>this counter's printer</span></button>
+        <button type="button" class="btn btn-outline btn-sm" data-size="112">112 mm receipt<span class="counter-tag" hidden>this counter's printer</span></button>
+      </div>
+    </div>
+    <p class="field-hint" style="margin:-6px 0 12px;"><b>A4</b> is for a normal office printer; the <b>mm receipts</b> are for thermal roll printers - pick the width of the roll in your printer. You can do more than one of these; this only closes when you click Close.</p>
     <div class="field" id="shareEmailField" style="display:none;">
       <label>Patient Email ID</label>
       <input id="share_email" type="email" placeholder="name@example.com">
@@ -1541,6 +1549,35 @@
     <div class="modal-actions">
       <button class="btn btn-outline btn-sm" id="share_cancel">Close</button>
       <button class="btn btn-primary btn-sm" id="share_send" style="display:none;">Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== THERMAL RECEIPT MODAL =====================
+     Preview of the 58 / 80 / 112 mm receipt at its true paper width, then
+     print. The receipt is its own little document (in the iframe) with its
+     own exact page size - it never touches the A4 bill or its print styles. -->
+<div id="receiptModal" class="modal-overlay">
+  <div class="modal-box receipt-modal-box">
+    <h3 id="receiptTitle">Thermal Receipt</h3>
+    <div class="receipt-controls">
+      <div class="receipt-tabs" id="receiptSizeTabs" role="group" aria-label="Paper width">
+        <button type="button" data-size="58">58 mm</button>
+        <button type="button" data-size="80">80 mm</button>
+        <button type="button" data-size="112">112 mm</button>
+      </div>
+      <label class="receipt-logo-toggle"><input type="checkbox" id="receiptLogoToggle" checked> Print logo</label>
+    </div>
+    <div class="receipt-stage">
+      <div class="receipt-paper">
+        <iframe id="receiptFrame" title="Receipt preview" scrolling="no"></iframe>
+      </div>
+    </div>
+    <p class="receipt-info" id="receiptInfo"></p>
+    <p class="field-hint receipt-help">In the print dialog choose your <b>thermal printer</b>, keep <b>Margins: Default</b> and <b>Scale: 100%</b>. The page length is set to this receipt automatically - no blank paper wasted. Choose "Save as PDF" there for a receipt-size PDF.</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-sm" id="receiptClose">Close</button>
+      <button class="btn btn-primary btn-sm" id="receiptPrintBtn" disabled>Print receipt</button>
     </div>
   </div>
 </div>
@@ -1633,6 +1670,6 @@
 
 <div class="toast-wrap" id="toastWrap"></div>
 
-<script src="app.js?v=20261020-36-phonepick"></script>
+<script src="app.js?v=20261021-40-rcptgrid"></script>
 </body>
 </html>

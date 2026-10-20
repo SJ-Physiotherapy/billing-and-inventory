@@ -37,7 +37,7 @@ const SHEET = {
 // to prove whether a NEW DEPLOYMENT actually picked up your latest code
 // (saving the file alone does NOT update the live /exec URL - see
 // Deploy > Manage deployments > pencil icon > Version: New version > Deploy).
-const BACKEND_BUILD = 'SJP-2026-10-20-01-PHONEPICK';
+const BACKEND_BUILD = 'SJP-2026-10-21-02-NOLIMIT';
 
 // ---------------------------------------------------------------------------
 // 0b. SCHEMA MIGRATIONS - runs automatically on every request (cheap
@@ -384,7 +384,8 @@ function doGet(e) {
     let result;
     switch (action) {
       case 'bootstrap':      result = apiBootstrap(); break;
-      case 'findCustomer':   result = apiFindCustomer(e.parameter.phone, e.parameter.name); break;
+      case 'findCustomer':   result = apiFindCustomer(e.parameter.phone, e.parameter.name, { withVisits: true }); break;
+      case 'getBillsByPhone': result = apiGetBillsByPhone(e.parameter.phone); break;
       case 'getCustomers':   result = apiGetCustomersList(); break;
       case 'getBill':        result = apiGetBill(e.parameter.billId); break;
       case 'getDashboardData': result = apiGetDashboardData(e.parameter); break;
@@ -524,7 +525,7 @@ const VR = {
 };
 const VLIMIT = {
   MONEY_MAX: 10000000, QTY_MAX: 9999, STOCK_MAX: 999999, THRESHOLD_MAX: 99999,
-  ITEMS_MAX: 100, ADDRESS_MAX: 250, NOTE_MAX: 200
+  ADDRESS_MAX: 250, NOTE_MAX: 200
 };
 const PAYMENT_METHODS = ['Cash', 'Bank'];
 const PAYMENT_STATUSES = ['Cash Collected', 'Pending', 'Paid', 'Failed'];
@@ -674,7 +675,7 @@ function vOneOf_(raw, label, allowed) {
 // product can always still be billed.
 function vItems_(items, knownNames) {
   if (!Array.isArray(items) || !items.length) return { error: 'Add at least one service/treatment.' };
-  if (items.length > VLIMIT.ITEMS_MAX) return { error: 'A bill can have at most ' + VLIMIT.ITEMS_MAX + ' lines.' };
+  // No limit on the number of lines - a bill holds as many items as it has.
   const out = [];
   for (let i = 0; i < items.length; i++) {
     const it = items[i] || {};
@@ -1573,7 +1574,10 @@ function apiGetCustomersList() {
 function patientNameKey_(v) { return vLine_(v).toLowerCase(); }
 const PATIENTS_PER_PHONE_MAX = 50;
 
-function apiFindCustomer(phone, name) {
+// opts.withVisits - also return each patient's last visit date (lastVisit,
+// 'yyyy-MM-dd' or '' if none). Only the billing screen's lookup asks for
+// it; the bill-save path doesn't, so saving a bill never pays for it.
+function apiFindCustomer(phone, name, opts) {
   const wantPhone = normalizeMobile_(phone);
   const wantName = patientNameKey_(name);
   // A name alone never identifies anyone - the number is always needed.
@@ -1589,6 +1593,14 @@ function apiFindCustomer(phone, name) {
     if (!match && wantName && patientNameKey_(row[1]) === wantName) match = c;
     if (patients.length < PATIENTS_PER_PHONE_MAX) patients.push(c);
   }
+  if (opts && opts.withVisits && patients.length) {
+    try {
+      const visits = lastVisitsFor_(patients.map(c => c.customerId));
+      patients.forEach(c => { c.lastVisit = visits[c.customerId] || ''; });
+    } catch (e) {
+      Logger.log('Last-visit lookup skipped: ' + e); // the list still works without dates
+    }
+  }
   const samePhone = patients.filter(c => c !== match);
   if (match) return { ok: true, found: true, customer: match, samePhone: samePhone, patients: patients };
   return { ok: true, found: false, samePhone: samePhone, patients: patients };
@@ -1601,6 +1613,94 @@ function patientSummary_(row) {
     customerId: str(row[0]), name: vLine_(row[1]), phone: normalizeMobile_(row[2]) || str(row[2]),
     email: str(row[3]), address: str(row[4]), deliveryAddress: str(row[5])
   };
+}
+
+// Bill dates come back from Sheets as Date objects (or, rarely, as the
+// typed text) - always hand the screen a plain 'yyyy-MM-dd'.
+function billDateStr_(v, ssRef) {
+  if (v instanceof Date) return fmtDate_(v, 'yyyy-MM-dd', ssRef);
+  const t = String(v == null ? '' : v).trim();
+  return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : '';
+}
+
+// Latest bill date per Patient ID: { 'PAT-0001': '2026-10-12', ... }.
+// Reads only the first three Bills columns (ID, Date, Patient ID) of the
+// active spreadsheet. Patients whose visits are all in an ARCHIVED database
+// (after "Add New Database") are looked up there too - archives never
+// change, so those answers are cached for 6 hours to keep lookups fast.
+const LAST_VISIT_CACHE_PREFIX_ = 'lv_arch_';
+function lastVisitsFor_(ids) {
+  const want = {};
+  ids.forEach(id => { if (id) want[String(id)] = true; });
+  const out = {};
+  const scan = function (ssRef, onlyIds) {
+    const sh = ssRef.getSheetByName(SHEET.BILLS);
+    if (!sh || sh.getLastRow() < 2) return;
+    const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      const pid = String(rows[i][2] || '');
+      if (!pid || !onlyIds[pid]) continue;
+      const d = billDateStr_(rows[i][1], ssRef);
+      if (d && (!out[pid] || d > out[pid])) out[pid] = d;
+    }
+  };
+  scan(ss_(), want);
+
+  const missing = Object.keys(want).filter(id => !out[id]);
+  if (!missing.length || !getArchiveRegistry_().length) return out;
+  const cache = CacheService.getScriptCache();
+  const cached = cache.getAll(missing.map(id => LAST_VISIT_CACHE_PREFIX_ + id));
+  const stillMissing = {};
+  missing.forEach(id => {
+    const hit = cached[LAST_VISIT_CACHE_PREFIX_ + id];
+    if (hit === undefined || hit === null) stillMissing[id] = true;
+    else if (hit !== '-') out[id] = hit;
+  });
+  if (!Object.keys(stillMissing).length) return out;
+  openArchives_().forEach(a => scan(a.ss, stillMissing));
+  const toCache = {};
+  Object.keys(stillMissing).forEach(id => { toCache[LAST_VISIT_CACHE_PREFIX_ + id] = out[id] || '-'; });
+  cache.putAll(toCache, 21600);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// FIND BILLS BY PHONE (Find / Edit Bill screen) - every bill whose phone is
+// this number, across the active database AND every archive, newest first.
+// Covers the whole family on that number; the screen lets the biller narrow
+// it down to one patient. Read-only - nothing is written.
+// ---------------------------------------------------------------------------
+const BILLS_BY_PHONE_MAX = 300;
+function apiGetBillsByPhone(phone) {
+  const want = normalizeMobile_(phone);
+  if (!/^[6-9]\d{9}$/.test(want)) {
+    return { ok: false, error: 'Enter a 10-digit mobile number (digits only) to find bills by phone.' };
+  }
+  const settings = getSettingsMap_();
+  const bills = [];
+  let total = 0;
+  allDbs_().forEach(db => {
+    const sh = db.ss.getSheetByName(SHEET.BILLS);
+    if (!sh || sh.getLastRow() < 2) return;
+    const data = sh.getRange(2, 1, sh.getLastRow() - 1, Math.min(23, sh.getLastColumn())).getValues();
+    for (let i = 0; i < data.length; i++) {
+      const r = data[i];
+      if (!r[0] || normalizeMobile_(r[4]) !== want) continue;
+      total++;
+      const net = Number(r[10]) || 0;
+      // Same grand total the printed bill shows (tax only if switched on for it).
+      const grand = computeTax_(net, settings, boolText_(r[20])).grandTotal;
+      bills.push({
+        billId: String(r[0]), date: billDateStr_(r[1], db.ss), customerId: String(r[2] || ''),
+        customerName: vLine_(r[3]), totalAmount: Math.round(grand * 100) / 100,
+        paymentMethod: String(r[8] || ''), paymentStatus: String(r[11] || ''),
+        source: db.label, editable: db.label === 'Active'
+      });
+    }
+  });
+  // Newest first; same date -> higher Bill ID first.
+  bills.sort((a, b) => (a.date === b.date ? (a.billId < b.billId ? 1 : -1) : (a.date < b.date ? 1 : -1)));
+  return { ok: true, phone: want, total: total, truncated: bills.length > BILLS_BY_PHONE_MAX, bills: bills.slice(0, BILLS_BY_PHONE_MAX) };
 }
 
 function rowToCustomer_(row) {
