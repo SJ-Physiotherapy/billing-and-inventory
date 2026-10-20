@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>SJ Physiotherapy - Billing, Sales and Inventory Analysis System</title>
 <link rel="icon" href="https://sjphysiotherapy.in/LOGO/favicon.png" type="image/png">
-<link rel="stylesheet" href="style.css?v=20261010-35-family">
+<link rel="stylesheet" href="style.css?v=20261020-36-phonepick">
 </head>
 <body>
 
@@ -130,8 +130,10 @@
               </div>
               <div class="field">
                 <label>Phone Number <span style="color:var(--danger)">*</span></label>
-                <input id="f_phone" type="tel" inputmode="numeric" autocomplete="off" placeholder="10-digit mobile number">
+                <input id="f_phone" type="tel" inputmode="numeric" autocomplete="off" placeholder="10-digit mobile number" aria-describedby="phoneLookupTip">
                 <div class="field-error">Valid phone number is required</div>
+                <div class="field-hint" id="phoneLookupTip">Returning patient? Just enter the phone number - everyone registered on it (family too) is listed below. No need to type the name.</div>
+                <div class="patient-pick" id="phonePatientList" hidden></div>
               </div>
               <div class="field">
                 <label>Patient ID</label>
@@ -1631,6 +1633,6 @@
 
 <div class="toast-wrap" id="toastWrap"></div>
 
-<script src="app.js?v=20261010-35-family"></script>
+<script src="app.js?v=20261020-36-phonepick"></script>
 </body>
 </html>

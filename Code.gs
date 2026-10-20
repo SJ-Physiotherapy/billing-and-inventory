@@ -37,7 +37,7 @@ const SHEET = {
 // to prove whether a NEW DEPLOYMENT actually picked up your latest code
 // (saving the file alone does NOT update the live /exec URL - see
 // Deploy > Manage deployments > pencil icon > Version: New version > Deploy).
-const BACKEND_BUILD = 'SJP-2026-10-10-01-FAMILY';
+const BACKEND_BUILD = 'SJP-2026-10-20-01-PHONEPICK';
 
 // ---------------------------------------------------------------------------
 // 0b. SCHEMA MIGRATIONS - runs automatically on every request (cheap
@@ -1564,25 +1564,43 @@ function apiGetCustomersList() {
 //     equals "9876543210", or the NUMBER 9876543210 as Sheets stores it).
 //   - Name compared ignoring capitals and extra spaces ("ramesh  kumar"
 //     equals "Ramesh Kumar").
-// When no exact match exists, the other patients already on that number are
-// returned as `samePhone`, so the biller can pick one if the name was just
-// typed slightly differently - instead of creating a duplicate by accident.
+// Every lookup also returns `patients` - ALL patients registered on that
+// number (oldest first), with their details - so the biller can type just
+// the phone number and pick who the bill is for from the list, and a name
+// spelled slightly differently never creates a duplicate by accident.
+// `samePhone` (the others on the number, excluding an exact match) is kept
+// for older open browser tabs that still read it.
 function patientNameKey_(v) { return vLine_(v).toLowerCase(); }
+const PATIENTS_PER_PHONE_MAX = 50;
 
 function apiFindCustomer(phone, name) {
   const wantPhone = normalizeMobile_(phone);
   const wantName = patientNameKey_(name);
-  if (!wantPhone || !wantName) return { ok: true, found: false, samePhone: [] };
+  // A name alone never identifies anyone - the number is always needed.
+  if (!/^[6-9]\d{9}$/.test(wantPhone)) return { ok: true, found: false, samePhone: [], patients: [] };
   const sh = ss_().getSheetByName(SHEET.CUSTOMERS);
   const data = sh.getDataRange().getValues();
-  const samePhone = [];
+  const patients = [];
+  let match = null;
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     if (!row[0] || normalizeMobile_(row[2]) !== wantPhone) continue;
-    if (patientNameKey_(row[1]) === wantName) return { ok: true, found: true, customer: rowToCustomer_(row) };
-    if (samePhone.length < 20) samePhone.push({ customerId: row[0], name: vLine_(row[1]) });
+    const c = patientSummary_(row);
+    if (!match && wantName && patientNameKey_(row[1]) === wantName) match = c;
+    if (patients.length < PATIENTS_PER_PHONE_MAX) patients.push(c);
   }
-  return { ok: true, found: false, samePhone: samePhone };
+  const samePhone = patients.filter(c => c !== match);
+  if (match) return { ok: true, found: true, customer: match, samePhone: samePhone, patients: patients };
+  return { ok: true, found: false, samePhone: samePhone, patients: patients };
+}
+
+// The details the billing screen fills in when a patient is picked.
+function patientSummary_(row) {
+  const str = v => (v === null || v === undefined) ? '' : String(v);
+  return {
+    customerId: str(row[0]), name: vLine_(row[1]), phone: normalizeMobile_(row[2]) || str(row[2]),
+    email: str(row[3]), address: str(row[4]), deliveryAddress: str(row[5])
+  };
 }
 
 function rowToCustomer_(row) {
@@ -1595,8 +1613,16 @@ function rowToCustomer_(row) {
 // Validates/cleans the patient fields shared by a new bill and a direct
 // saveCustomer call. Returns { ok, values } or { ok:false, error, field }.
 function validatePatientFields_(p) {
+  let nameCheck = vPersonName_(p.customerName, 'Patient Name', true);
+  // An EXISTING patient's name (exact same phone + name already registered)
+  // is accepted as it was saved, even if it predates today's naming rules -
+  // e.g. "Baby of Priya 2" picked from the list must still be billable.
+  if (nameCheck.error && vLine_(p.customerName)) {
+    const ph = normalizeMobile_(p.phone);
+    if (/^[6-9]\d{9}$/.test(ph) && apiFindCustomer(ph, p.customerName).found) nameCheck = vRes_(vLine_(p.customerName));
+  }
   return vCollect_([
-    ['customerName', vPersonName_(p.customerName, 'Patient Name', true)],
+    ['customerName', nameCheck],
     ['phone', vMobile_(p.phone, 'Phone Number', true)],
     ['email', vEmail_(p.email, 'Email', false)],
     ['address', vAddress_(p.address, 'Address')],

@@ -202,6 +202,37 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); outline: none;
 }
 .field-hint { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+
+/* "Patients on this number" picker under the Phone field (Create Bill).
+   Typing a full number lists everyone already registered on it; tapping a
+   row fills in the patient. Rows are real buttons, so Tab/Enter work. */
+.patient-pick[hidden] { display: none; }
+.patient-pick {
+  margin-top: 8px; border: 1px solid var(--line); border-radius: var(--radius-md);
+  background: var(--surface); box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.patient-pick-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 7px 12px; font-size: 12px; font-weight: 700; color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.patient-pick-head .pp-sync { font-weight: 400; font-style: italic; }
+.patient-pick-list { max-height: 228px; overflow-y: auto; }
+.patient-pick-item {
+  display: flex; width: 100%; align-items: center; gap: 10px; text-align: left;
+  padding: 9px 12px; border: 0; border-bottom: 1px solid var(--line);
+  background: transparent; color: var(--ink); font: inherit; font-size: 13.5px; cursor: pointer;
+}
+.patient-pick-item:last-child { border-bottom: 0; }
+.patient-pick-item:hover, .patient-pick-item:focus-visible { background: var(--primary-soft); outline: none; }
+.patient-pick-item .pp-name { font-weight: 700; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.patient-pick-item .pp-id {
+  font-family: var(--font-mono); font-size: 12px; color: var(--muted); white-space: nowrap;
+}
+.patient-pick-item .pp-tick { width: 16px; color: var(--primary); font-weight: 800; flex: none; }
+.patient-pick-item.selected { background: var(--primary-soft); }
+.patient-pick-item.pp-new { color: var(--primary); font-weight: 700; }
+.patient-pick-empty { padding: 9px 12px; font-size: 12.5px; color: var(--muted); }
 /* Every field label inside Admin Settings (all tabs) gets this fixed brand
    blue, so field names read clearly and consistently no matter what the
    rest of the theme's colors are set to. */

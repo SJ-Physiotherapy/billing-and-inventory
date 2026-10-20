@@ -14,8 +14,8 @@ const CONFIG = {
 // Bump this whenever you redeploy app.js - printed on load so you can
 // confirm in the browser console (F12) that the page is actually running
 // the file you think it's running, not a cached older copy.
-const FRONTEND_BUILD = 'SJP-2026-10-10-35-FAMILY';
-const EXPECTED_BACKEND_BUILD = 'SJP-2026-10-10-01-FAMILY'; // must match BACKEND_BUILD in Code.gs
+const FRONTEND_BUILD = 'SJP-2026-10-20-36-PHONEPICK';
+const EXPECTED_BACKEND_BUILD = 'SJP-2026-10-20-01-PHONEPICK'; // must match BACKEND_BUILD in Code.gs
 console.log('SJP billing app.js build', FRONTEND_BUILD);
 
 // Shows a impossible-to-miss banner at the top of the app the moment we can
@@ -1665,10 +1665,236 @@ document.getElementById('f_totalDiscountPct') && document.getElementById('f_tota
 // -------------------------------------------------------------------------
 // A patient = PHONE + NAME together. The same number with a different name
 // (e.g. a child on a parent's number) is a different patient and gets its
-// own Patient ID. Matching runs once BOTH a valid number and a name are in.
+// own Patient ID. Two ways to reach an existing patient:
+//   1. Type just the phone number - everyone registered on it is listed
+//      under the Phone field; tap the one this bill is for.
+//   2. Type phone + name - matched automatically when you leave the field.
 let custLookupTimer = null;
 let lastCustLookupKey_ = '';
 let matchedKey_ = '';
+
+// "9876543210|ramesh kumar" - phone normalised to 10 digits, name compared
+// ignoring capitals and extra spaces (same rule as the server).
+function currentCustLookupKey_() {
+  const phone = normalizeMobile_(document.getElementById('f_phone').value);
+  const name = vLine_(document.getElementById('f_customerName').value).toLowerCase();
+  return phone + '|' + name;
+}
+function isValidMobile_(d) { return /^[6-9]\d{9}$/.test(d); }
+
+// =========================================================================
+// 8a. PATIENTS ON THIS NUMBER - the picker under the Phone field.
+//
+// As soon as a complete 10-digit number is typed, the list appears at once
+// from the patient list already loaded on this screen, then refreshes from
+// the server a moment later - so a patient another biller added a minute
+// ago shows up too. Nothing is saved by picking; it only fills the form.
+// =========================================================================
+const phonePick_ = { phone: '', patients: [], synced: false, seq: 0, timer: null };
+
+// Quick list from what's already loaded (id + name only - the email and
+// address arrive with the server refresh).
+function localPatientsForPhone_(phone) {
+  return (state.customers || [])
+    .filter(c => c && c.id && normalizeMobile_(c.phone) === phone)
+    .map(c => ({ customerId: String(c.id), name: vLine_(c.name), phone: phone, partial: true }));
+}
+
+function hidePhonePatientList_() {
+  clearTimeout(phonePick_.timer);
+  phonePick_.phone = ''; phonePick_.patients = []; phonePick_.synced = false; phonePick_.seq++;
+  const box = document.getElementById('phonePatientList');
+  box.hidden = true;
+  box.textContent = '';
+  syncPhoneTip_();
+}
+
+// The "just enter the phone number" tip is for discovery - while the list
+// is open it explains itself, so the tip steps aside to keep things tidy.
+function syncPhoneTip_() {
+  const tip = document.getElementById('phoneLookupTip');
+  if (tip) tip.hidden = !document.getElementById('phonePatientList').hidden;
+}
+
+// Runs (debounced) whenever the phone number changes.
+function refreshPhonePatientList_() {
+  const phone = normalizeMobile_(document.getElementById('f_phone').value);
+  if (!isValidMobile_(phone)) { hidePhonePatientList_(); return; }
+  if (phone === phonePick_.phone) { renderPhonePatientList_(); return; } // already showing this number
+  phonePick_.phone = phone;
+  phonePick_.patients = localPatientsForPhone_(phone);
+  phonePick_.synced = false;
+  renderPhonePatientList_();
+  loadPhonePatientsFromServer_(phone);
+}
+
+async function loadPhonePatientsFromServer_(phone) {
+  const seq = ++phonePick_.seq;
+  let r = null;
+  try { r = await apiGet('findCustomer', { phone: phone, name: '' }); } catch (e) { r = null; }
+  // The number may have changed while this was in flight - ignore old answers.
+  if (seq !== phonePick_.seq || phone !== phonePick_.phone) return;
+  // An older backend (Code.gs not yet redeployed) doesn't send `patients` -
+  // the quick list stays, so the screen still works, just without refresh.
+  if (r && r.ok && Array.isArray(r.patients)) applyServerPatients_(phone, r.patients);
+  phonePick_.synced = true;
+  renderPhonePatientList_();
+}
+
+// Takes the server's (authoritative) list. If a patient was already picked
+// from the quick list, their email/address are filled in now - but only
+// into boxes that are still empty, never over something typed meanwhile.
+function applyServerPatients_(phone, patients) {
+  if (phone !== phonePick_.phone) return;
+  phonePick_.patients = patients.map(c => Object.assign({}, c, { customerId: String(c.customerId), name: vLine_(c.name) }));
+  const pickedId = document.getElementById('f_customerId').value;
+  const picked = pickedId && phonePick_.patients.find(c => c.customerId === pickedId);
+  if (picked && currentCustLookupKey_() === matchedKey_) {
+    ['email', 'address', 'deliveryAddress'].forEach(k => {
+      const el = document.getElementById('f_' + k);
+      if (!el.value.trim() && picked[k]) el.value = picked[k];
+    });
+    renderPreview();
+  }
+}
+
+function renderPhonePatientList_() {
+  const box = document.getElementById('phonePatientList');
+  const phone = phonePick_.phone;
+  box.textContent = '';
+  if (!phone) { box.hidden = true; syncPhoneTip_(); return; }
+  const list = phonePick_.patients;
+  const selectedId = document.getElementById('f_customerId').value;
+
+  if (!list.length) {
+    const empty = document.createElement('div');
+    empty.className = 'patient-pick-empty';
+    empty.textContent = phonePick_.synced
+      ? 'No patient registered on this number yet - enter the name to add a new patient.'
+      : 'Looking for patients on this number...';
+    box.appendChild(empty);
+    box.hidden = false;
+    syncPhoneTip_();
+    return;
+  }
+
+  const head = document.createElement('div');
+  head.className = 'patient-pick-head';
+  const title = document.createElement('span');
+  title.textContent = list.length === 1
+    ? '1 patient on this number - tap to bill for them:'
+    : list.length + ' patients on this number - tap who this bill is for:';
+  head.appendChild(title);
+  if (!phonePick_.synced) {
+    const sync = document.createElement('span');
+    sync.className = 'pp-sync';
+    sync.textContent = 'updating...';
+    head.appendChild(sync);
+  }
+  box.appendChild(head);
+
+  // Names are put in with textContent - never parsed as HTML.
+  const listEl = document.createElement('div');
+  listEl.className = 'patient-pick-list';
+  listEl.setAttribute('role', 'listbox');
+  listEl.setAttribute('aria-label', 'Patients on this phone number');
+  list.forEach(c => {
+    const isSel = selectedId && c.customerId === selectedId;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'patient-pick-item' + (isSel ? ' selected' : '');
+    btn.setAttribute('role', 'option');
+    btn.setAttribute('aria-selected', isSel ? 'true' : 'false');
+    const tick = document.createElement('span'); tick.className = 'pp-tick'; tick.textContent = isSel ? '✓' : '';
+    const name = document.createElement('span'); name.className = 'pp-name'; name.textContent = c.name || '(no name)';
+    const id = document.createElement('span'); id.className = 'pp-id'; id.textContent = c.customerId;
+    btn.append(tick, name, id);
+    btn.addEventListener('click', () => pickPatientFromList_(c));
+    listEl.appendChild(btn);
+  });
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'patient-pick-item pp-new';
+  add.setAttribute('role', 'option');
+  add.setAttribute('aria-selected', 'false');
+  const plus = document.createElement('span'); plus.className = 'pp-tick'; plus.textContent = '+';
+  const addLabel = document.createElement('span'); addLabel.className = 'pp-name';
+  addLabel.textContent = 'New patient on this number (e.g. another family member)';
+  add.append(plus, addLabel);
+  add.addEventListener('click', startNewPatientOnPhone_);
+  listEl.appendChild(add);
+  box.appendChild(listEl);
+  box.hidden = false;
+  syncPhoneTip_();
+}
+
+// Fills email/address from a patient record. Kept exactly like the
+// original auto-fill: a stored value replaces what's in the box; a blank
+// stored value leaves the box as it is.
+function fillPatientDetails_(c) {
+  if (!c || c.partial) return;
+  document.getElementById('f_email').value = c.email || document.getElementById('f_email').value;
+  document.getElementById('f_address').value = c.address || document.getElementById('f_address').value;
+  document.getElementById('f_deliveryAddress').value = c.deliveryAddress || document.getElementById('f_deliveryAddress').value;
+}
+
+function setPatientMatched_(c, how) {
+  const nameEl = document.getElementById('f_customerName');
+  nameEl.value = c.name;
+  clearFieldError_(nameEl);
+  clearFieldError_(document.getElementById('f_phone'));
+  document.getElementById('f_customerId').value = c.customerId;
+  fillPatientDetails_(c);
+  matchedKey_ = currentCustLookupKey_();
+  lastCustLookupKey_ = matchedKey_; // no need to look the same patient up again on blur
+  const hint = document.getElementById('custMatchHint');
+  hint.textContent = (how === 'picked' ? 'Billing for existing patient ' : 'Existing patient matched and auto-filled: ') + c.customerId + '.';
+  hint.style.color = 'var(--success)';
+  renderPhonePatientList_();
+  renderPreview();
+}
+
+function pickPatientFromList_(c) { setPatientMatched_(c, 'picked'); }
+
+// "+ New patient on this number" - clears any picked patient and puts the
+// cursor in the name box. A brand-new Patient ID is made on save.
+function startNewPatientOnPhone_() {
+  const nameEl = document.getElementById('f_customerName');
+  const idEl = document.getElementById('f_customerId');
+  const typed = vLine_(nameEl.value).toLowerCase();
+  // If the name box still holds a listed patient's name, clear it so the
+  // new person's name is typed fresh (otherwise it would just re-match).
+  if (idEl.value || phonePick_.patients.some(c => c.name.toLowerCase() === typed)) nameEl.value = '';
+  idEl.value = '';
+  matchedKey_ = '';
+  lastCustLookupKey_ = '';
+  const hint = document.getElementById('custMatchHint');
+  hint.textContent = 'New patient on this number - type their name. A new Patient ID will be created on save.';
+  hint.style.color = 'var(--muted)';
+  renderPhonePatientList_();
+  renderPreview();
+  nameEl.focus();
+}
+
+// Keyboard: Down arrow from the Phone box jumps into the list; Up/Down move
+// through it; Up from the first row (or Esc) goes back to the Phone box.
+document.getElementById('f_phone').addEventListener('keydown', e => {
+  if (e.key !== 'ArrowDown') return;
+  const first = document.querySelector('#phonePatientList .patient-pick-item');
+  if (first) { e.preventDefault(); first.focus(); }
+});
+document.getElementById('phonePatientList').addEventListener('keydown', e => {
+  const items = Array.from(document.querySelectorAll('#phonePatientList .patient-pick-item'));
+  const i = items.indexOf(document.activeElement);
+  if (i === -1) return;
+  if (e.key === 'ArrowDown' && i < items.length - 1) { e.preventDefault(); items[i + 1].focus(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); (i > 0 ? items[i - 1] : document.getElementById('f_phone')).focus(); }
+  else if (e.key === 'Escape') { e.preventDefault(); document.getElementById('f_phone').focus(); }
+});
+
+// =========================================================================
+// 8b. Typing in Phone / Name
+// =========================================================================
 ['f_phone', 'f_customerName'].forEach(id => {
   const el = document.getElementById(id);
   el.addEventListener('blur', () => {
@@ -1680,54 +1906,29 @@ let matchedKey_ = '';
   // so a bill can never be saved against another family member's ID.
   el.addEventListener('input', () => {
     const idEl = document.getElementById('f_customerId');
-    if (currentCustLookupKey_() === matchedKey_ && idEl.value) return;
-    if (idEl.value) { idEl.value = ''; renderPreview(); }
-    matchedKey_ = '';
-    lastCustLookupKey_ = '';
-    document.getElementById('custMatchHint').textContent = '';
+    if (!(currentCustLookupKey_() === matchedKey_ && idEl.value)) {
+      if (idEl.value) { idEl.value = ''; renderPreview(); }
+      matchedKey_ = '';
+      lastCustLookupKey_ = '';
+      document.getElementById('custMatchHint').textContent = '';
+    }
+    if (id === 'f_phone') {
+      // Show / refresh the list shortly after typing pauses.
+      clearTimeout(phonePick_.timer);
+      phonePick_.timer = setTimeout(refreshPhonePatientList_, 250);
+    } else if (phonePick_.phone) {
+      renderPhonePatientList_(); // un-tick a patient whose name was just edited
+    }
   });
 });
-
-// "9876543210|ramesh kumar" - phone normalised to 10 digits, name compared
-// ignoring capitals and extra spaces (same rule as the server).
-function currentCustLookupKey_() {
-  const phone = normalizeMobile_(document.getElementById('f_phone').value);
-  const name = vLine_(document.getElementById('f_customerName').value).toLowerCase();
-  return phone + '|' + name;
-}
-
-// Shows "already on this number: [Name] [Name]" - tapping a name picks that
-// existing patient, so a slightly different spelling never creates a
-// duplicate by accident. Built with DOM nodes (names are never parsed as HTML).
-function showSamePhoneHint_(hint, list) {
-  hint.textContent = '';
-  hint.style.color = 'var(--muted)';
-  hint.appendChild(document.createTextNode('New patient on this number - a new Patient ID will be created. Already registered on this number: '));
-  list.forEach((p, i) => {
-    if (i) hint.appendChild(document.createTextNode(', '));
-    const link = document.createElement('a');
-    link.href = '#';
-    link.textContent = p.name + ' (' + p.customerId + ')';
-    link.style.color = 'var(--primary)';
-    link.style.fontWeight = '600';
-    link.addEventListener('click', e => {
-      e.preventDefault();
-      document.getElementById('f_customerName').value = p.name;
-      lastCustLookupKey_ = '';
-      tryMatchCustomer();
-    });
-    hint.appendChild(link);
-  });
-  hint.appendChild(document.createTextNode(' - tap a name if it is the same person.'));
-}
 
 async function tryMatchCustomer() {
   const phoneRaw = document.getElementById('f_phone').value.trim();
   const phone = normalizeMobile_(phoneRaw);
   const name = vLine_(document.getElementById('f_customerName').value);
-  // Both are needed to identify a patient. A half-typed number can never
-  // match anyone, so wait until it's a complete, valid mobile number.
-  if (!/^[6-9]\d{9}$/.test(phone) || name.length < 2) return;
+  // Both are needed to identify a patient (just a phone number shows the
+  // list instead - see 8a). A half-typed number can never match anyone.
+  if (!isValidMobile_(phone) || name.length < 2) return;
   const key = currentCustLookupKey_();
   // Leaving the second field after a match used to fire the exact same
   // lookup again - skip a repeat of the last lookup.
@@ -1739,24 +1940,24 @@ async function tryMatchCustomer() {
     // The person may have kept typing while this was in flight - an answer
     // for an older phone/name must not overwrite the current form.
     if (currentCustLookupKey_() !== key) return;
+    // The same answer carries the full list for this number - refresh it.
+    if (r.ok && Array.isArray(r.patients) && phone === phonePick_.phone) {
+      applyServerPatients_(phone, r.patients);
+      phonePick_.synced = true;
+    }
     if (r.ok && r.found) {
-      const c = r.customer;
-      document.getElementById('f_customerId').value = c.customerId;
-      matchedKey_ = key;
-      document.getElementById('f_email').value = c.email || document.getElementById('f_email').value;
-      document.getElementById('f_address').value = c.address || document.getElementById('f_address').value;
-      document.getElementById('f_deliveryAddress').value = c.deliveryAddress || document.getElementById('f_deliveryAddress').value;
-      hint.textContent = 'Existing patient ' + c.customerId + ' matched and auto-filled.';
-      hint.style.color = 'var(--success)';
-    } else if (r.ok) {
+      setPatientMatched_(Object.assign({}, r.customer, { customerId: String(r.customer.customerId), name: vLine_(r.customer.name) }), 'matched');
+      return;
+    }
+    if (r.ok) {
       document.getElementById('f_customerId').value = '';
       matchedKey_ = '';
-      if (r.samePhone && r.samePhone.length) {
-        showSamePhoneHint_(hint, r.samePhone);
-      } else {
-        hint.textContent = 'New patient - a Patient ID will be created on save.';
-        hint.style.color = 'var(--muted)';
-      }
+      const others = Array.isArray(r.patients) ? r.patients : (r.samePhone || []);
+      hint.textContent = others.length
+        ? 'New patient on this number - a new Patient ID will be created on save. If it is someone already in the list under Phone, tap their name instead.'
+        : 'New patient - a Patient ID will be created on save.';
+      hint.style.color = 'var(--muted)';
+      if (phonePick_.phone) renderPhonePatientList_();
     } else {
       lastCustLookupKey_ = ''; // let the next blur try again
     }
@@ -1997,6 +2198,21 @@ function applyLocalStockDeduction_(items) {
   });
 }
 
+// Patient name rule for Create Bill. A name that already belongs to a
+// patient on this number (picked from the list, or matched) is accepted
+// exactly as it was saved - older records may predate the naming rules.
+function billPatientNameCheck_() {
+  const raw = document.getElementById('f_customerName').value;
+  const res = vPersonName_(raw, 'Patient Name', true);
+  if (!res.error) return res;
+  const name = vLine_(raw);
+  const key = name.toLowerCase();
+  const phone = normalizeMobile_(document.getElementById('f_phone').value);
+  const known = (document.getElementById('f_customerId').value && currentCustLookupKey_() === matchedKey_) ||
+    (phone && phone === phonePick_.phone && phonePick_.patients.some(c => c.name.toLowerCase() === key));
+  return (known && name) ? vRes_(name) : res;
+}
+
 // Full check of the Create Bill form. Marks every problem field at once and
 // returns the cleaned values that actually get sent (trimmed, phone reduced
 // to 10 digits, etc.) - the server re-checks the same rules on its side.
@@ -2005,7 +2221,7 @@ function validateBillForm() {
   const discountsOn = document.getElementById('f_showDiscountToggle').classList.contains('on');
   const checks = [
     ['f_date', vDate_(document.getElementById('f_date').value, 'Date'), 'date'],
-    ['f_customerName', vPersonName_(document.getElementById('f_customerName').value, 'Patient Name', true), 'customerName'],
+    ['f_customerName', billPatientNameCheck_(), 'customerName'],
     ['f_phone', vMobile_(document.getElementById('f_phone').value, 'Phone Number', true), 'phone'],
     ['f_email', vEmail_(document.getElementById('f_email').value, 'Email', false), 'email'],
     ['f_address', vAddress_(document.getElementById('f_address').value, 'Address'), 'address'],
@@ -2199,6 +2415,7 @@ async function resetBillingForm() {
   document.getElementById('f_deliveryAddress').value = '';
   document.getElementById('f_customerId').value = '';
   document.getElementById('custMatchHint').textContent = '';
+  hidePhonePatientList_(); // the next bill starts with no number, so no list
   document.getElementById('f_paymentMethod').value = 'Cash';
   document.getElementById('f_billerPassword').value = '';
   document.getElementById('f_totalDiscountPct').value = '';
